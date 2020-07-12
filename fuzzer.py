@@ -1,17 +1,28 @@
 from pwn import *
 import sys
-
+import json
+import xml.etree.ElementTree as ET
 ############################
 ##### HELPER FUNCTIONS #####
 ############################
 
 ##### FORMAT CHECK #####
 
-def isJSON(lines):
-    return False
+def isJSON(inputStr):
+	try:
+		json_obj = json.loads(inputStr)
+	except:
+		return False
 
-def isXML(lines):
-    return False
+	return True
+
+def isXML(inputStr):
+    try:
+    	ET.fromstring(inputStr)
+    except:
+    	return False
+
+    return True
 
 # Checks if input is CSV
 # Idea:
@@ -29,6 +40,19 @@ def isCSV(lines):
         return True
     return False
 
+#count lines in input string
+#count commas in first line
+#if format is CSV, total comma count will be equal to lines * first line comma count
+def isCSV2(inputStr):
+	line_count = inputStr.count('\n')
+	lines = inputStr.split("\n")
+	first_line_comma_count = lines[0].count(',')
+	total_comma_count = inputStr.count(',')
+
+	if((line_count+1) * first_line_comma_count == total_comma_count and line_count > 1):
+		return True
+	else:
+		return False
 
 ############################
 ##### FUZZER FUNCTIONS #####
@@ -120,23 +144,27 @@ if len(sys.argv) != 3:
 try:
     inputFile = open(sys.argv[2], 'r')
     inputStr = inputFile.read().strip()
+    #TODO: lines almost always returns an empty list, will be using inputStr as the input for the isJSON, isXML, isCSV funcitons
     lines = inputFile.readlines()
 except OSError:
     print('@@@ Could not open ' + sys.argv[2])
     print("@@@ Usage: ./fuzzer program sampleinput.txt")
     sys.exit()
-
 # Determine format in sampleinput.txt
 inputFormat = "plaintext"
-if isJSON(lines):
+if isJSON(inputStr):
     print("@@@ Format found: JSON")
     inputFormat = "json"
-elif isXML(lines):
+elif isXML(inputStr):
     print("@@@ Format found: XML")
     inputFormat = "xml"
 elif isCSV(lines):
-    print("@@@ Format found: CSV")
-    inputFormat = "csv"
+	print("@@@ Format found: CSV")
+	inputFormat = "csv"
+#TODO: choose between CSV checkers
+elif isCSV2(inputStr):
+	print("@@@ Format found: CSV")
+	inputFormat = "csv"
 else:
     print("@@@ Format found: plaintext")
 
@@ -187,8 +215,3 @@ elif e == -11:
 ### 3. Do format-specific manipulation/generation of input ###
 
 # - change fields of input, possibly aided
-
-
-
-
-
