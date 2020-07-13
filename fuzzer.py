@@ -202,39 +202,47 @@ class PlaintextFuzzer(Fuzzer):
     def fuzz(self, mutated, stop):
         # Fuzz a program that accepts plaintext
         # Fuzz - empty input
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0))
+            return
         exitCode = runProcess("")
+        ThreadManager.getInstance().threadResult(("",exitCode))
         if exitCode != 0:
-            return ("", exitCode)    
+            return
         # Fuzz - null terminator
         testStr = self.plaintextNullMutate("")
         exitCode = runProcess(testStr)
+        ThreadManager.getInstance().threadResult((testStr,exitCode))
         if exitCode != 0:
-            return (testStr, exitCode)
+            return
         # Fuzz - newline
         testStr = self.plaintextNewlineMutate("")
         exitCode = runProcess(testStr)
+        ThreadManager.getInstance().threadResult((testStr,exitCode))
         if exitCode != 0:
-            return (testStr, exitCode)
+            return
         # Fuzz - format string
         testStr = self.plaintextFormatMutate("")
         exitCode = runProcess(testStr)
         # Fuzz - all characters
         testStr = self.plaintextCharMutate("")
         exitCode = runProcess(testStr)
+        ThreadManager.getInstance().threadResult((testStr,exitCode))
         if exitCode != 0:
-            return (testStr, exitCode)
+            return
         # Fuzz - overflow
         testStr = ""
         while (True):
             testStr = self.plaintextPadding(testStr, 10)
             exitCode = runProcess(testStr)
+            ThreadManager.getInstance().threadResult((testStr,exitCode))
             if exitCode != 0:
-                return (testStr, exitCode)
+                return
             if len(testStr) > 1000:
                 break
 
         # No vulnerability found
-        return ("", 0)
+        return ThreadManager.getInstance().threadResult(("",0))
 
 
 # Runs a process, returns exit code
@@ -276,7 +284,6 @@ elif CSVFuzzer(inputStr).isType() :
 else:
     fuzzer = PlaintextFuzzer(inputStr)
 ThreadManager.getInstance().startThreads(fuzzer)
-# print(runProcess(inputStr))
 
         
 ### 1. Read input.txt ###
