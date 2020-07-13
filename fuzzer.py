@@ -15,19 +15,33 @@ import copy
 
 ##### FORMAT CHECK #####    
 
-# class myThread (threading.Thread):
-#    def __init__(self, threadID, name, counter):
-#       threading.Thread.__init__(self)
-#       self.threadID = threadID
-#       self.name = name
-#       self.counter = counter
-#    def run(self):
-#       print ("Starting " + self.name)
-#       # Get lock to synchronize threads
-#       threadLock.acquire()
-#       print_time(self.name, self.counter, 3)
-#       # Free lock to release next thread
-#       threadLock.release()
+class ThreadManager:
+    def __init__(self, count):
+        self.count = count
+        self.stopFlag = False
+    def startThreads(self, fuzzer):
+        self.stopFlag = False
+        for i in self.count:
+            thread = threading.Thread(target = fuzzer.fuzz(fuzzer.inputStr), args=(lambda : self.stopFlag))
+            thread.start()
+            print(f"Starting thread {thread.ident}")
+
+    def stopThreads(self):
+        self.stopFlag = True
+        
+    def threadResult(self,result):
+        (i, e) = result
+        print("\n@@@ RESULT")
+        if e == 0:
+            print("@@@ No vulnerabilities found...yet")
+        elif e == -11:
+            print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+            self.stopThreads()
+        thread = threading.current_thread()
+        print(f"Stopping thread {thread.ident}")
+        thread.join()
+
+threadManager = ThreadManager(10)
 
 class Fuzzer:
     def __init__(self, inputStr):
@@ -54,6 +68,7 @@ class JSONFuzzer(Fuzzer):
         self.perms = set()
         self.jsonObj = json.loads(inputStr)
         self.perms.add(inputStr)
+
     def isType(self):
         try:
             json.loads(self.inputStr)
@@ -62,15 +77,20 @@ class JSONFuzzer(Fuzzer):
 
         return True
 
-    def fuzz(self, mutated):
+    def fuzz(self, mutated, stop):
+        if stop():
+            threadManager.threadResult((0,""))
+            return
         # Acquire lock
         if mutated not in self.perms :
             self.perms.add(mutated)
             # Remove lock
-
+            exitCode = runProcess(mutated)
+            if exitCode != 0:
+                threadManager.threadResult((exitCode,""))
         else:
-            self.fuzz(self.mutate())
-        return (0, "")
+            self.fuzz(self.mutate(),stop)
+        threadManager.threadResult((0,""))
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
@@ -234,20 +254,17 @@ except OSError:
     print("@@@ Usage: ./fuzzer program sampleinput.txt")
     sys.exit()
 
+fuzzer = None
 if JSONFuzzer(inputStr).isType() :
-    pass
+    fuzzer = JSONFuzzer(inputStr)
 elif XMLFuzzer(inputStr).isType() :
-    pass
+    fuzzer = XMLFuzzer(inputStr)
 elif CSVFuzzer(inputStr).isType() :
-    pass
+    fuzzer = CSVFuzzer(inputStr)
 else:
-    (i, e) = PlaintextFuzzer(inputStr).fuzz()
+    fuzzer = PlaintextFuzzer(inputStr)
 
-print("\n@@@ RESULT")
-if e == 0:
-    print("@@@ No vulnerabilities found...yet")
-elif e == -11:
-    print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+threadManager.startThreads(fuzzer)
 
         
 ### 1. Read input.txt ###
