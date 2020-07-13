@@ -14,15 +14,24 @@ import copy
 ############################
 
 ##### FORMAT CHECK #####    
-
 class ThreadManager:
+    __instance = None
+    @staticmethod 
+    def getInstance():
+        if ThreadManager.__instance == None:
+            ThreadManager()
+        return ThreadManager.__instance
     def __init__(self, count):
-        self.count = count
-        self.stopFlag = False
+        if ThreadManager.__instance != None:
+            raise Exception("This class is a singleton!")
+        else:
+            ThreadManager.__instance = self
+            self.count = count
+            self.stopFlag = False
     def startThreads(self, fuzzer):
         self.stopFlag = False
-        for i in self.count:
-            thread = threading.Thread(target = fuzzer.fuzz(fuzzer.inputStr), args=(lambda : self.stopFlag))
+        for i in range(0,self.count):
+            thread = threading.Thread(target = fuzzer.fuzz, args=(fuzzer.inputStr,lambda : self.stopFlag))
             thread.start()
             print(f"Starting thread {thread.ident}")
 
@@ -30,16 +39,18 @@ class ThreadManager:
         self.stopFlag = True
         
     def threadResult(self,result):
+        # if self.stopFlag:
+        #     thread = threading.current_thread()
+        #     print(f"Stopping thread {thread.ident}")
+        #     thread.join()
         (i, e) = result
+        # print(i)
         print("\n@@@ RESULT")
         if e == 0:
             print("@@@ No vulnerabilities found...yet")
         elif e == -11:
             print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
             self.stopThreads()
-        thread = threading.current_thread()
-        print(f"Stopping thread {thread.ident}")
-        thread.join()
 
 threadManager = ThreadManager(10)
 
@@ -48,10 +59,10 @@ class Fuzzer:
         self.inputStr = inputStr
     def isType(self):
         return True
-    def fuzz(self):
+    def fuzz(self,mutated,stop):
         return (0, "")
 class JSONRules(enum.Enum):
-   OVERFLOW = "A" * 100000
+   OVERFLOW = "A" * 1000
    BOUNDARY_MINUS = -1
    BOUNDARY_PLUS = 1
    BOUNDARY_ZERO = 0
@@ -64,10 +75,13 @@ class JSONFuzzer(Fuzzer):
         self.formatLimit = 1000
         self.rules = []
         for rule in JSONRules :
-            self.rules.append(rule)
+            self.rules.append(rule.value)
         self.perms = set()
-        self.jsonObj = json.loads(inputStr)
         self.perms.add(inputStr)
+        try:
+            self.jsonObj = json.loads(self.inputStr)
+        except:
+            self.jsonObj = {}
 
     def isType(self):
         try:
@@ -79,18 +93,21 @@ class JSONFuzzer(Fuzzer):
 
     def fuzz(self, mutated, stop):
         if stop():
-            threadManager.threadResult((0,""))
+            ThreadManager.getInstance().threadResult((mutated,0))
             return
         # Acquire lock
         if mutated not in self.perms :
             self.perms.add(mutated)
             # Remove lock
             exitCode = runProcess(mutated)
+            ThreadManager.getInstance().threadResult((mutated,exitCode))
             if exitCode != 0:
-                threadManager.threadResult((exitCode,""))
+                return
+            self.fuzz(self.mutate(),stop)
+
         else:
             self.fuzz(self.mutate(),stop)
-        threadManager.threadResult((0,""))
+        ThreadManager.getInstance().threadResult((mutated,0))
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
@@ -103,7 +120,7 @@ class JSONFuzzer(Fuzzer):
         temp = copy.deepcopy(self.jsonObj)
         for key in self.jsonObj:
             mutation = self.rules[random.randint(0,len(self.rules)-1)]
-            if mutation == JSONRules.FORMAT:
+            if mutation == JSONRules.FORMAT.value:
                 formatStr = self.getFormatStr(random.randint(1,self.formatLimit))
                 temp[key] = formatStr
             else:
@@ -113,8 +130,6 @@ class JSONFuzzer(Fuzzer):
 class XMLFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
-    def fuzz(self):
-        return (0, "")
     def isType(self):
         try:
             ET.fromstring(self.inputStr)
@@ -126,8 +141,6 @@ class XMLFuzzer(Fuzzer):
 class CSVFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
-    def fuzz(self):
-        return (0, "")
     
     # # Checks if input is CSV
     # # Idea:
@@ -186,7 +199,7 @@ class PlaintextFuzzer(Fuzzer):
             testStr = testStr + chr(count)
             count += 1
         return testStr
-    def fuzz(self):
+    def fuzz(self, mutated, stop):
         # Fuzz a program that accepts plaintext
         # Fuzz - empty input
         exitCode = runProcess("")
@@ -227,11 +240,10 @@ class PlaintextFuzzer(Fuzzer):
 # Runs a process, returns exit code
 def runProcess(testStr):
     p = process("./"+sys.argv[1])
-    while p.poll(block = False) == None:
-        print("@@@ Sending: " + testStr)
-        p.sendline(testStr)
-        sleep(0.3)
-    return p.poll(block = False)
+    # print("@@@ Sending: " + testStr)
+    p.sendline(testStr)
+    p.shutdown()
+    return p.poll(block = True)
 
 
 ######################
@@ -263,8 +275,8 @@ elif CSVFuzzer(inputStr).isType() :
     fuzzer = CSVFuzzer(inputStr)
 else:
     fuzzer = PlaintextFuzzer(inputStr)
-
-threadManager.startThreads(fuzzer)
+ThreadManager.getInstance().startThreads(fuzzer)
+# print(runProcess(inputStr))
 
         
 ### 1. Read input.txt ###
