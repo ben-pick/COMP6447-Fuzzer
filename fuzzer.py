@@ -52,7 +52,7 @@ class ThreadManager:
             print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
             self.stopThreads()
 
-threadManager = ThreadManager(10)
+threadManager = ThreadManager(1)
 
 class Fuzzer:
     def __init__(self, inputStr):
