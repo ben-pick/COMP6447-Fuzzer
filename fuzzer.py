@@ -2,124 +2,207 @@ from pwn import *
 import sys
 import json
 import xml.etree.ElementTree as ET
+import threading
+import enum
+import re
+import random
+import copy
+
+
 ############################
 ##### HELPER FUNCTIONS #####
 ############################
 
-##### FORMAT CHECK #####
+##### FORMAT CHECK #####    
 
-def isJSON(inputStr):
-	try:
-		json_obj = json.loads(inputStr)
-	except:
-		return False
+# class myThread (threading.Thread):
+#    def __init__(self, threadID, name, counter):
+#       threading.Thread.__init__(self)
+#       self.threadID = threadID
+#       self.name = name
+#       self.counter = counter
+#    def run(self):
+#       print ("Starting " + self.name)
+#       # Get lock to synchronize threads
+#       threadLock.acquire()
+#       print_time(self.name, self.counter, 3)
+#       # Free lock to release next thread
+#       threadLock.release()
 
-	return True
-
-def isXML(inputStr):
-    try:
-    	ET.fromstring(inputStr)
-    except:
-    	return False
-
-    return True
-
-# Checks if input is CSV
-# Idea:
-# - count the number of commas for each line
-# - every line should have the same number of commas
-def isCSV(lines):
-    # Check that there is more than one line
-    # and at least 1 comma
-    # I might be wrong on these, for now it passes the binaries given
-    if len(lines) > 1 and lines[0].count(",") > 0:
-        num_comma = lines[0].count(",")
-        for l in lines:
-            if l.count(",") != num_comma:
-                return False
+class Fuzzer:
+    def __init__(self, inputStr):
+        self.inputStr = inputStr
+    def isType(self):
         return True
-    return False
+    def fuzz(self):
+        return (0, "")
+class JSONRules(enum.Enum):
+   OVERFLOW = "A" * 100000
+   BOUNDARY_MINUS = -1
+   BOUNDARY_PLUS = 1
+   BOUNDARY_ZERO = 0
+   LARGE_POS_NUM = 999999999999999999999999999999999999999999999999999999
+   LARGE_NEG_NUM = -999999999999999999999999999999999999999999999999999999
+   FORMAT = "%p"
+class JSONFuzzer(Fuzzer):
+    def __init__(self, inputStr):
+        super().__init__(inputStr)
+        self.formatLimit = 1000
+        self.rules = []
+        for rule in JSONRules :
+            self.rules.append(rule)
+        self.perms = set()
+        self.jsonObj = json.loads(inputStr)
+        self.perms.add(inputStr)
+    def isType(self):
+        try:
+            json.loads(self.inputStr)
+        except:
+            return False
 
-#count lines in input string
-#count commas in first line
-#if format is CSV, total comma count will be equal to lines * first line comma count
-def isCSV2(inputStr):
-	line_count = inputStr.count('\n')
-	lines = inputStr.split("\n")
-	first_line_comma_count = lines[0].count(',')
-	total_comma_count = inputStr.count(',')
+        return True
 
-	if((line_count+1) * first_line_comma_count == total_comma_count and line_count > 1):
-		return True
-	else:
-		return False
+    def fuzz(self, mutated):
+        # Acquire lock
+        if mutated not in self.perms :
+            self.perms.add(mutated)
+            # Remove lock
 
-############################
-##### FUZZER FUNCTIONS #####
-############################
+        else:
+            self.fuzz(self.mutate())
+        return (0, "")
+    
+    def checkFormatStrNum(self,inputStr):
+        res = re.search(r"\%(.*?)\$", inputStr).group()
+        return res[1:len(res)-1]
+    
+    def getFormatStr(self, num):
+        return f"AAAAAAAAAA%{num}$n"
 
-##### PLAINTEXT #####
+    def mutate(self):
+        temp = copy.deepcopy(self.jsonObj)
+        for key in self.jsonObj:
+            mutation = self.rules[random.randint(0,len(self.rules)-1)]
+            if mutation == JSONRules.FORMAT:
+                formatStr = self.getFormatStr(random.randint(1,self.formatLimit))
+                temp[key] = formatStr
+            else:
+                temp[key] = mutation
+        return json.dumps(temp)
+        
+class XMLFuzzer(Fuzzer):
+    def __init__(self, inputStr):
+        super().__init__(inputStr)
+    def fuzz(self):
+        return (0, "")
+    def isType(self):
+        try:
+            ET.fromstring(self.inputStr)
+        except:
+            return False
 
-# Fuzz a program that accepts plaintext
-def fuzzPlaintext(inputStr):
-    # Fuzz - empty input
-    exitCode = runProcess("")
-    if exitCode != 0:
-        return ("", exitCode)    
-    # Fuzz - null terminator
-    testStr = plaintextNullMutate("")
-    exitCode = runProcess(testStr)
-    if exitCode != 0:
-        return (testStr, exitCode)
-    # Fuzz - newline
-    testStr = plaintextNewlineMutate("")
-    exitCode = runProcess(testStr)
-    if exitCode != 0:
-        return (testStr, exitCode)
-    # Fuzz - format string
-    testStr = plaintextFormatMutate("")
-    exitCode = runProcess(testStr)
-    # Fuzz - all characters
-    testStr = plaintextCharMutate("")
-    exitCode = runProcess(testStr)
-    if exitCode != 0:
-        return (testStr, exitCode)
-    # Fuzz - overflow
-    testStr = ""
-    while (True):
-        testStr = plaintextPadding(testStr, 10)
+        return True
+     
+class CSVFuzzer(Fuzzer):
+    def __init__(self, inputStr):
+        super().__init__(inputStr)
+    def fuzz(self):
+        return (0, "")
+    
+    # # Checks if input is CSV
+    # # Idea:
+    # # - count the number of commas for each line
+    # # - every line should have the same number of commas
+    # def isCSV(lines):
+    #     # Check that there is more than one line
+    #     # and at least 1 comma
+    #     # I might be wrong on these, for now it passes the binaries given
+    #     if len(lines) > 1 and lines[0].count(",") > 0:
+    #         num_comma = lines[0].count(",")
+    #         for l in lines:
+    #             if l.count(",") != num_comma:
+    #                 return False
+    #         return True
+    #     return False
+
+    #count lines in input string
+    #count commas in first line
+    #if format is CSV, total comma count will be equal to lines * first line comma count
+    def isType(self):
+        line_count = self.inputStr.count('\n')
+        lines = self.inputStr.split("\n")
+        first_line_comma_count = lines[0].count(',')
+        total_comma_count = self.inputStr.count(',')
+
+        if((line_count+1) * first_line_comma_count == total_comma_count and line_count > 1):
+            return True
+        else:
+            return False
+
+class PlaintextFuzzer(Fuzzer):
+    def __init__(self, inputStr):
+        super().__init__(inputStr)
+    
+    # Mutate with character padding
+    def plaintextPadding(self, testStr, count):
+        return testStr + "a"*count
+
+    # Mutate with null character
+    def plaintextNullMutate(self, testStr):
+        return testStr + "\0"
+
+    # Mutate with newline character
+    def plaintextNewlineMutate(self, testStr):
+        return testStr + "\n"
+
+    # Mutate with format string
+    def plaintextFormatMutate(self, testStr):
+        return testStr + "%x"
+
+    # Mutate with all characters
+    def plaintextCharMutate(self, testStr):
+        count = 0
+        while count <= 127:
+            testStr = testStr + chr(count)
+            count += 1
+        return testStr
+    def fuzz(self):
+        # Fuzz a program that accepts plaintext
+        # Fuzz - empty input
+        exitCode = runProcess("")
+        if exitCode != 0:
+            return ("", exitCode)    
+        # Fuzz - null terminator
+        testStr = self.plaintextNullMutate("")
         exitCode = runProcess(testStr)
         if exitCode != 0:
             return (testStr, exitCode)
-        if len(testStr) > 1000:
-            break
+        # Fuzz - newline
+        testStr = self.plaintextNewlineMutate("")
+        exitCode = runProcess(testStr)
+        if exitCode != 0:
+            return (testStr, exitCode)
+        # Fuzz - format string
+        testStr = self.plaintextFormatMutate("")
+        exitCode = runProcess(testStr)
+        # Fuzz - all characters
+        testStr = self.plaintextCharMutate("")
+        exitCode = runProcess(testStr)
+        if exitCode != 0:
+            return (testStr, exitCode)
+        # Fuzz - overflow
+        testStr = ""
+        while (True):
+            testStr = self.plaintextPadding(testStr, 10)
+            exitCode = runProcess(testStr)
+            if exitCode != 0:
+                return (testStr, exitCode)
+            if len(testStr) > 1000:
+                break
 
-    # No vulnerability found
-    return ("", 0)
+        # No vulnerability found
+        return ("", 0)
 
-# Mutate with character padding
-def plaintextPadding(testStr, count):
-    return testStr + "a"*count
-
-# Mutate with null character
-def plaintextNullMutate(testStr):
-    return testStr + "\0"
-
-# Mutate with newline character
-def plaintextNewlineMutate(testStr):
-    return testStr + "\n"
-
-# Mutate with format string
-def plaintextFormatMutate(testStr):
-    return testStr + "%x"
-
-# Mutate with all characters
-def plaintextCharMutate(testStr):
-    count = 0
-    while count <= 127:
-        testStr = testStr + chr(count)
-        count += 1
-    return testStr
 
 # Runs a process, returns exit code
 def runProcess(testStr):
@@ -150,34 +233,15 @@ except OSError:
     print('@@@ Could not open ' + sys.argv[2])
     print("@@@ Usage: ./fuzzer program sampleinput.txt")
     sys.exit()
-# Determine format in sampleinput.txt
-inputFormat = "plaintext"
-if isJSON(inputStr):
-    print("@@@ Format found: JSON")
-    inputFormat = "json"
-elif isXML(inputStr):
-    print("@@@ Format found: XML")
-    inputFormat = "xml"
-elif isCSV(lines):
-	print("@@@ Format found: CSV")
-	inputFormat = "csv"
-#TODO: choose between CSV checkers
-elif isCSV2(inputStr):
-	print("@@@ Format found: CSV")
-	inputFormat = "csv"
-else:
-    print("@@@ Format found: plaintext")
 
-# Run the binary in a process and feed input
-# Keep repeating until segfault, mutating input each time
-if inputFormat == "json":
+if JSONFuzzer(inputStr).isType() :
     pass
-elif inputFormat == "xml":
+elif XMLFuzzer(inputStr).isType() :
     pass
-elif inputFormat == "csv":
+elif CSVFuzzer(inputStr).isType() :
     pass
 else:
-    (i, e) = fuzzPlaintext(inputStr)
+    (i, e) = PlaintextFuzzer(inputStr).fuzz()
 
 print("\n@@@ RESULT")
 if e == 0:
