@@ -28,6 +28,7 @@ class ThreadManager:
             ThreadManager.__instance = self
             self.count = count
             self.stopFlag = False
+            self.stopSem = threading.Semaphore(1)
     def startThreads(self, fuzzer):
         self.stopFlag = False
         for i in range(0,self.count):
@@ -45,14 +46,19 @@ class ThreadManager:
         #     thread.join()
         (i, e) = result
         # print(i)
-        print("\n@@@ RESULT")
-        if e == 0:
-            print("@@@ No vulnerabilities found...yet")
-        elif e == -11:
-            print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
-            self.stopThreads()
+        self.stopSem.acquire()
+        if not self.stopFlag:
+            if e == 0:
+                print("\n@@@ RESULT")
+                print("@@@ No vulnerabilities found...yet")
+            elif e == -11:
+                # Save output here
+                print("\n@@@ RESULT")
+                print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+                self.stopThreads()
+        self.stopSem.release()
 
-threadManager = ThreadManager(1)
+threadManager = ThreadManager(10)
 
 class Fuzzer:
     def __init__(self, inputStr):
@@ -107,7 +113,7 @@ class JSONFuzzer(Fuzzer):
 
         else:
             self.fuzz(self.mutate(),stop)
-        ThreadManager.getInstance().threadResult((mutated,0))
+        return ThreadManager.getInstance().threadResult((mutated,0))
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
