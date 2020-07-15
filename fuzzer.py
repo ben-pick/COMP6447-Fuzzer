@@ -13,9 +13,10 @@ import copy
 ##### HELPER FUNCTIONS #####
 ############################
 
-##### FORMAT CHECK #####    
+# All threads are managed here. Singleton instantiation, one instance only (thread safe). 
 class ThreadManager:
     __instance = None
+    # Gets the only instance of the ThreadManager.
     @staticmethod 
     def getInstance():
         if ThreadManager.__instance == None:
@@ -29,6 +30,7 @@ class ThreadManager:
             self.count = count
             self.stopFlag = False
             self.stopSem = threading.Semaphore(1)
+    # Starts n number of threads (which is specified on instantiation), with the fuzzer you want to fuzz with
     def startThreads(self, fuzzer):
         self.stopFlag = False
         for i in range(0,self.count):
@@ -36,16 +38,14 @@ class ThreadManager:
             thread.start()
             print(f"Starting thread {thread.ident}")
 
+    # Stop threads, used only in this class
     def stopThreads(self):
         self.stopFlag = True
         
+    # Whenever a process exits with an exit code, send it to this function. Will stop all threads if we find a vuln.
+    # e.g. ThreadManager.getInstance().threadResult(exitCode, inputStr)
     def threadResult(self,result):
-        # if self.stopFlag:
-        #     thread = threading.current_thread()
-        #     print(f"Stopping thread {thread.ident}")
-        #     thread.join()
         (i, e) = result
-        # print(i)
         self.stopSem.acquire()
         if not self.stopFlag:
             if e == 0:
@@ -58,15 +58,25 @@ class ThreadManager:
                 self.stopThreads()
         self.stopSem.release()
 
+# Use 10 threads for now
 threadManager = ThreadManager(10)
 
+# All specific fuzzers inherit from this
 class Fuzzer:
     def __init__(self, inputStr):
         self.inputStr = inputStr
+    # Returns if the inputStr can be parsed as its type
     def isType(self):
         return True
+    # Where are the processing occurs, should only return when we get a seg fault, otherwise keep running indefinitely
+    # Mutated parameter is for recursion if you wish to mutate by recursion
+    # Stop is a lambda function that changes when ThreadManager.stopFlag changes, i.e. when we want all other threads to stop
+    # Check for stop at the start of your fuzz function, and return if you do
+    # Report to threadManager by ThreadManager.getInstance().threadResult whenever runProcess finishes
     def fuzz(self,mutated,stop):
         return (0, "")
+# Arbitrary enum, you dont have to use in other fuzzer classes
+# All the different permutations for the JSON fuzzer
 class JSONRules(enum.Enum):
    OVERFLOW = "A" * 1000
    BOUNDARY_MINUS = -1
@@ -78,6 +88,8 @@ class JSONRules(enum.Enum):
 class JSONFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
+        # Limit on how many format strings we should check based i.e. go up to %1000$n
+        # Hopefully will overwrite some value and make it invalid
         self.formatLimit = 1000
         self.rules = []
         for rule in JSONRules :
@@ -102,6 +114,7 @@ class JSONFuzzer(Fuzzer):
             ThreadManager.getInstance().threadResult((mutated,0))
             return
         # Acquire lock
+        # Dont check the same permutation if we have already tested it
         if mutated not in self.perms :
             self.perms.add(mutated)
             # Remove lock
@@ -123,6 +136,7 @@ class JSONFuzzer(Fuzzer):
         return f"AAAAAAAAAA%{num}$n"
 
     def mutate(self):
+        # Choose a random rule and apply it to that entry
         temp = copy.deepcopy(self.jsonObj)
         for key in self.jsonObj:
             mutation = self.rules[random.randint(0,len(self.rules)-1)]
@@ -275,6 +289,7 @@ try:
     inputStr = inputFile.read().strip()
     #TODO: lines almost always returns an empty list, will be using inputStr as the input for the isJSON, isXML, isCSV funcitons
     lines = inputFile.readlines()
+    inputFile.close()
 except OSError:
     print('@@@ Could not open ' + sys.argv[2])
     print("@@@ Usage: ./fuzzer program sampleinput.txt")
