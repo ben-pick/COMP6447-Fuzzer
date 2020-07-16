@@ -196,7 +196,7 @@ class CSVFuzzer(Fuzzer):
     def csvPadding(self, inputStr, count):
         return inputStr + "A" * count
 
-    # forms a basic line
+    # forms a basic line with single A's
     def craftLine(self):
         CSVline = '\n'
         for i in range(0, self.commasPerLine):
@@ -209,6 +209,45 @@ class CSVFuzzer(Fuzzer):
             inputStr = inputStr + self.craftLine()
         return inputStr
 
+    # forms a valid line of 10 A's
+    def craftLongLine(self):
+        CSVline = '\n'
+        for i in range(0, self.commasPerLine):
+            CSVline += 'A'*9+','
+        CSVline += 'A'
+        return CSVline
+    
+    def appendLongOverflow(self, inputStr):
+        inputStr = inputStr + self.craftLongLine()
+        return inputStr
+    
+    # Append a line with large positive values
+    def largePositive(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '999999999999999999999999999999999999999999999999999999' + ','
+        newLine += '999999999999999999999999999999999999999999999999999999'
+        inputStr = inputStr + newLine
+        return inputStr
+
+    # Append a line with large negative values
+    def largeNegative(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '-999999999999999999999999999999999999999999999999999999' + ','
+        newLine += '-999999999999999999999999999999999999999999999999999999'
+        inputStr = inputStr + newLine
+        return inputStr
+    
+    # append a line of 0's
+    def appendZero(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '0,'
+        newLine += '0'
+        inputStr = inputStr + newLine
+        return inputStr
+
     def fuzz(self, mutated, stop):
         # Fuzz a program with csv file format
         if stop():
@@ -219,7 +258,7 @@ class CSVFuzzer(Fuzzer):
         if exitCode != 0:
             return
 
-        # Fuzz - Overflow via appending valid csv lines
+        # Fuzz - Overflow via appending single character csv line - e.g. A,A,A,A,A
         overflow = self.inputStr
         while (True):
             overflow = self.appendOverflow(overflow)
@@ -227,8 +266,40 @@ class CSVFuzzer(Fuzzer):
             ThreadManager.getInstance().threadResult((overflow,exitCode))
             if exitCode != 0:
                 return
-            if len(overflow) > 10000:
+            if len(overflow) > 10000: 
                 break
+
+        # Fuzz - Overflow by appending 10 character values csv line - AAAAAAAAAA,AAAA... etc.
+        overflow2 = self.inputStr
+        while (True):
+            overflow2 = self.appendLongOverflow(overflow2)
+            exitCode = runProcess(overflow2)
+            ThreadManager.getInstance().threadResult((overflow2,exitCode))
+            if exitCode != 0:
+                return
+            if len(overflow2) > 10000:
+                break
+
+        # Fuzz - Payload with large Positive number
+        payload = self.largePositive(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
+
+        # Fuzz - Payload with large negative number
+        payload = self.largeNegative(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
+        
+        # Fuzz - Payload with 0's
+        payload = self.appendZero(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
 
         # No vulnerability found
         return ThreadManager.getInstance().threadResult(("",0))
