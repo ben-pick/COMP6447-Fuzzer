@@ -38,10 +38,6 @@ class ThreadManager:
             thread.start()
             print(f"Starting thread {thread.ident}")
 
-    # Stop threads, used only in this class
-    def stopThreads(self):
-        self.stopFlag = True
-        
     # Whenever a process exits with an exit code, send it to this function. Will stop all threads if we find a vuln.
     # e.g. ThreadManager.getInstance().threadResult(exitCode, inputStr)
     def threadResult(self,result):
@@ -55,7 +51,8 @@ class ThreadManager:
                 # Save output here
                 print("\n@@@ RESULT")
                 print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
-                self.stopThreads()
+                self.stopFlag = True
+                self.stopSem.release()
         self.stopSem.release()
 
 # Use 10 threads for now
@@ -110,30 +107,30 @@ class JSONFuzzer(Fuzzer):
         return True
 
     def fuzz(self, mutated, stop):
-        if stop():
-            ThreadManager.getInstance().threadResult((mutated,0))
-            return
-        # Acquire lock
-        # Dont check the same permutation if we have already tested it
-        if mutated not in self.perms :
-            self.perms.add(mutated)
-            # Remove lock
-            exitCode = runProcess(mutated)
-            ThreadManager.getInstance().threadResult((mutated,exitCode))
-            if exitCode != 0:
+        m = self.inputStr
+        while True:
+            if stop():
+                ThreadManager.getInstance().threadResult((mutated,0))
                 return
-            self.fuzz(self.mutate(),stop)
-
-        else:
-            self.fuzz(self.mutate(),stop)
-        return ThreadManager.getInstance().threadResult((mutated,0))
+            # Acquire lock
+            # Dont check the same permutation if we have already tested it
+            if m not in self.perms :
+                self.perms.add(m)
+                # Remove lock
+                exitCode = runProcess(m)
+                ThreadManager.getInstance().threadResult((m,exitCode))
+                if exitCode != 0:
+                    return
+            m = self.mutate()
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
         return res[1:len(res)-1]
     
     def getFormatStr(self, num):
-        return f"AAAAAAAAAA%{num}$n"
+        str = ""
+        for i in range (0,num) :
+            str += "AAAAA" + f"%{num}$n"
 
     def mutate(self):
         # Choose a random rule and apply it to that entry
@@ -141,7 +138,7 @@ class JSONFuzzer(Fuzzer):
         for key in self.jsonObj:
             mutation = self.rules[random.randint(0,len(self.rules)-1)]
             if mutation == JSONRules.FORMAT.value:
-                formatStr = self.getFormatStr(random.randint(1,self.formatLimit))
+                formatStr = self.getFormatStr(self.formatLimit)
                 temp[key] = formatStr
             else:
                 temp[key] = mutation
@@ -161,7 +158,6 @@ class XMLFuzzer(Fuzzer):
 class CSVFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
-    
     # # Checks if input is CSV
     # # Idea:
     # # - count the number of commas for each line
@@ -271,7 +267,10 @@ def runProcess(testStr):
     # print("@@@ Sending: " + testStr)
     p.sendline(testStr)
     p.shutdown()
-    return p.poll(block = True)
+    ret = p.poll(block = True)
+    p.stderr.close()
+    p.stdout.close()
+    return ret
 
 
 ######################
