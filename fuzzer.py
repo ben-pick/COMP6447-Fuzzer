@@ -1,6 +1,7 @@
 from pwn import *
 import sys
 import json
+import csv
 import xml.etree.ElementTree as ET
 import threading
 import enum
@@ -157,10 +158,13 @@ class XMLFuzzer(Fuzzer):
             return False
 
         return True
-     
+
 class CSVFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
+        self.lines = self.inputStr.split("\n")
+        self.commasPerLine = self.lines[0].count(",")
+        self.valuesPerLine = self.commasPerLine + 1
     # # Checks if input is CSV
     # # Idea:
     # # - count the number of commas for each line
@@ -190,6 +194,118 @@ class CSVFuzzer(Fuzzer):
             return True
         else:
             return False
+    
+    # Padding of desired length
+    def csvPadding(self, inputStr, count):
+        return inputStr + "A" * count
+
+    # forms a basic line with single A's
+    def craftLine(self):
+        CSVline = '\n'
+        for i in range(0, self.commasPerLine):
+            CSVline += 'A,'
+        CSVline += 'A'
+        return CSVline
+
+    def appendOverflow(self, inputStr):
+        for i in range(10):
+            inputStr = inputStr + self.craftLine()
+        return inputStr
+
+    # forms a valid line of 10 A's
+    def craftLongLine(self):
+        CSVline = '\n'
+        for i in range(0, self.commasPerLine):
+            CSVline += 'A'*9+','
+        CSVline += 'A'
+        return CSVline
+    
+    def appendLongOverflow(self, inputStr):
+        inputStr = inputStr + self.craftLongLine()
+        return inputStr
+    
+    # Append a line with large positive values
+    def largePositive(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '999999999999999999999999999999999999999999999999999999' + ','
+        newLine += '999999999999999999999999999999999999999999999999999999'
+        inputStr = inputStr + newLine
+        return inputStr
+
+    # Append a line with large negative values
+    def largeNegative(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '-999999999999999999999999999999999999999999999999999999' + ','
+        newLine += '-999999999999999999999999999999999999999999999999999999'
+        inputStr = inputStr + newLine
+        return inputStr
+    
+    # append a line of 0's
+    def appendZero(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '0,'
+        newLine += '0'
+        inputStr = inputStr + newLine
+        return inputStr
+
+    def fuzz(self, mutated, stop):
+        # Fuzz a program with csv file format
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0))
+            return
+        exitCode = runProcess("")
+        ThreadManager.getInstance().threadResult(("",exitCode))
+        if exitCode != 0:
+            return
+
+        # Fuzz - Overflow via appending single character csv line - e.g. A,A,A,A,A
+        overflow = self.inputStr
+        while (True):
+            overflow = self.appendOverflow(overflow)
+            exitCode = runProcess(overflow)
+            ThreadManager.getInstance().threadResult((overflow,exitCode))
+            if exitCode != 0:
+                return
+            if len(overflow) > 10000: 
+                break
+
+        # Fuzz - Overflow by appending 10 character values csv line - AAAAAAAAAA,AAAA... etc.
+        overflow2 = self.inputStr
+        while (True):
+            overflow2 = self.appendLongOverflow(overflow2)
+            exitCode = runProcess(overflow2)
+            ThreadManager.getInstance().threadResult((overflow2,exitCode))
+            if exitCode != 0:
+                return
+            if len(overflow2) > 10000:
+                break
+
+        # Fuzz - Payload with large Positive number
+        payload = self.largePositive(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
+
+        # Fuzz - Payload with large negative number
+        payload = self.largeNegative(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
+        
+        # Fuzz - Payload with 0's
+        payload = self.appendZero(self.inputStr)
+        exitCode = runProcess(payload)
+        ThreadManager.getInstance().threadResult((payload,exitCode))
+        if exitCode != 0:
+            return
+
+        # No vulnerability found
+        return ThreadManager.getInstance().threadResult(("",0))
 
 class PlaintextFuzzer(Fuzzer):
     def __init__(self, inputStr):
@@ -289,6 +405,7 @@ if len(sys.argv) != 3:
 try:
     inputFile = open(sys.argv[2], 'r')
     inputStr = inputFile.read().strip()
+    print(inputStr)
     #TODO: lines almost always returns an empty list, will be using inputStr as the input for the isJSON, isXML, isCSV funcitons
     lines = inputFile.readlines()
     inputFile.close()
