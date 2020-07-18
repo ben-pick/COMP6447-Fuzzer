@@ -132,9 +132,7 @@ class JSONFuzzer(Fuzzer):
         return res[1:len(res)-1]
     
     def getFormatStr(self, num):
-        str = ""
-        for i in range (0,num) :
-            str += "AAAAA" + f"%{num}$n"
+        return "%s" * num;    
 
     def mutate(self):
         # Choose a random rule and apply it to that entry
