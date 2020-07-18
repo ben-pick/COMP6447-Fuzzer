@@ -51,6 +51,9 @@ class ThreadManager:
                 # Save output here
                 print("\n@@@ RESULT")
                 print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+                f = open("bad.txt","w+")
+                f.write(i)
+                f.close()
                 self.stopFlag = True
                 self.stopSem.release()
         self.stopSem.release()
