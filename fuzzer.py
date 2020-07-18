@@ -405,7 +405,6 @@ if len(sys.argv) != 3:
 try:
     inputFile = open(sys.argv[2], 'r')
     inputStr = inputFile.read().strip()
-    print(inputStr)
     #TODO: lines almost always returns an empty list, will be using inputStr as the input for the isJSON, isXML, isCSV funcitons
     lines = inputFile.readlines()
     inputFile.close()
