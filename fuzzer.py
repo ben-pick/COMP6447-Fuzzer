@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 from pwn import *
 import sys
 import json
@@ -95,6 +96,7 @@ class JSONFuzzer(Fuzzer):
         self.rules = []
         for rule in JSONRules :
             self.rules.append(rule.value)
+        self.bytesToAdd = ["\0", "%s", "A", "\n"]
         self.perms = set()
         self.perms.add(inputStr)
         try:
