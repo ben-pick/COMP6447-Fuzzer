@@ -2,7 +2,7 @@ fuzzer.py
 ========================
 Usage
 ```
-python3 fuzzer.py binary binary.txt
+./fuzzer.py binary binary.txt
 ```
 ------------------------
 
