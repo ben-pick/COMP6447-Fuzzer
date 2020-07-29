@@ -32,6 +32,7 @@ class ThreadManager:
             self.count = count
             self.stopFlag = False
             self.stopSem = threading.Semaphore(1)
+            self.addSem = threading.Semaphore(1)
     # Starts n number of threads (which is specified on instantiation), with the fuzzer you want to fuzz with
     def startThreads(self, fuzzer):
         self.stopFlag = False
@@ -61,7 +62,7 @@ class ThreadManager:
         self.stopSem.release()
 
 # Use 10 threads for now
-threadManager = ThreadManager(10)
+threadManager = ThreadManager(50)
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -80,12 +81,16 @@ class Fuzzer:
 # Arbitrary enum, you dont have to use in other fuzzer classes
 # All the different permutations for the JSON fuzzer
 class JSONRules(enum.Enum):
-   OVERFLOW = "A" * 1000
+   OVERFLOW = "A" * 100000
    BOUNDARY_MINUS = -1
    BOUNDARY_PLUS = 1
    BOUNDARY_ZERO = 0
    LARGE_POS_NUM = 999999999999999999999999999999999999999999999999999999
    LARGE_NEG_NUM = -999999999999999999999999999999999999999999999999999999
+   ONE_BYTE = 128
+   TWO_BYTE = 32768
+   FOUR_BYTE = 2147483648
+   EIGHT_BYTE = 9223372036854775808  
    FORMAT = "%p"
 class JSONFuzzer(Fuzzer):
     def __init__(self, inputStr):
@@ -97,8 +102,6 @@ class JSONFuzzer(Fuzzer):
         for rule in JSONRules :
             self.rules.append(rule.value)
         self.bytesToAdd = ["\0", "%s", "A", "\n"]
-        self.perms = set()
-        self.perms.add(inputStr)
         try:
             self.jsonObj = json.loads(self.inputStr)
         except:
@@ -118,15 +121,10 @@ class JSONFuzzer(Fuzzer):
             if stop():
                 ThreadManager.getInstance().threadResult((mutated,0))
                 return
-            # Acquire lock
-            # Dont check the same permutation if we have already tested it
-            if m not in self.perms :
-                self.perms.add(m)
-                # Remove lock
-                exitCode = runProcess(m)
-                ThreadManager.getInstance().threadResult((m,exitCode))
-                if exitCode != 0:
-                    return
+            exitCode = runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode))
+            if exitCode != 0:
+                return
             m = self.mutate()
     
     def checkFormatStrNum(self,inputStr):
@@ -137,16 +135,45 @@ class JSONFuzzer(Fuzzer):
         return "%s" * num;    
 
     def mutate(self):
-        # Choose a random rule and apply it to that entry
-        temp = copy.deepcopy(self.jsonObj)
-        for key in self.jsonObj:
-            mutation = self.rules[random.randint(0,len(self.rules)-1)]
-            if mutation == JSONRules.FORMAT.value:
-                formatStr = self.getFormatStr(self.formatLimit)
-                temp[key] = formatStr
-            else:
+        if len(self.rules) != 0 :
+            # Do all of the boundary checks here to pick up errors quick
+            ThreadManager.getInstance().addSem.acquire()
+            temp = copy.deepcopy(self.jsonObj)
+            mutation = self.rules[0]
+            for key in temp:
                 temp[key] = mutation
-        return json.dumps(temp)
+            self.rules.remove(mutation)
+            ThreadManager.getInstance().addSem.release()
+            return json.dumps(temp)
+        else :
+            # Mutate - only does ints and strings right now
+            # For strings, just add bad bytes to string
+            # For ints, multiply by -2
+            # When all entries reach a large length, add a 1000 more
+            byte = self.bytesToAdd[random.randint(0,len(self.bytesToAdd)-1)]
+            ThreadManager.getInstance().addSem.acquire()
+            continueFlag = True
+            for key in self.jsonObj:
+                if isinstance(self.jsonObj[key], str):
+                    if len(self.jsonObj[key]) < 1000:
+                        if continueFlag:
+                            continueFlag = False
+                    self.jsonObj[key] = self.jsonObj[key] + byte
+                if isinstance(self.jsonObj[key], int):
+                    if self.jsonObj[key] == 0:
+                        self.jsonObj[key] = 1
+                    if len(str(self.jsonObj[key])) < 50:
+                        if continueFlag:
+                            continueFlag = False
+                    self.jsonObj[key] = self.jsonObj[key]*-2
+            if continueFlag:
+                for i in range(0, 500):
+                    self.jsonObj[f"add{i}"] = "A"
+                for i in range(0, 500):
+                    self.jsonObj[f"add{i}"] = random.randint(-10,10)
+            ThreadManager.getInstance().addSem.release()
+            return json.dumps(self.jsonObj)
+
         
 class XMLFuzzer(Fuzzer):
     def __init__(self, inputStr):
@@ -384,6 +411,7 @@ class PlaintextFuzzer(Fuzzer):
 def runProcess(testStr):
     p = process("./"+sys.argv[1])
     # print("@@@ Sending: " + testStr)
+    # print(len(testStr))
     p.sendline(testStr)
     p.shutdown()
     ret = p.poll(block = True)
