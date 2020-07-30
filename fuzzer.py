@@ -166,6 +166,23 @@ class JSONFuzzer(Fuzzer):
                         if continueFlag:
                             continueFlag = False
                     self.jsonObj[key] = self.jsonObj[key]*-2
+                if isinstance(self.jsonObj[key], list):
+                    for i in range(0,len(self.jsonObj[key])-1):
+                        if isinstance(self.jsonObj[key][i],str):
+                            if len(self.jsonObj[key][i]) < 1000:
+                                if continueFlag:
+                                    continueFlag = False
+                                self.jsonObj[key][i] = self.jsonObj[key][i] + byte
+                        if isinstance(self.jsonObj[key][i],int):
+                            if len(str(self.jsonObj[key][i])) < 50:
+                                if continueFlag:
+                                    continueFlag = False
+                            self.jsonObj[key][i] = self.jsonObj[key][i]*-2
+                    if random.randint(0,1):
+                        self.jsonObj[key].append("A")
+                    else:
+                        self.jsonObj[key].append(random.randint(-10,10))
+
             if continueFlag:
                 for i in range(0, 500):
                     self.jsonObj[f"add{i}"] = "A"
