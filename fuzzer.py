@@ -62,7 +62,7 @@ class ThreadManager:
         self.stopSem.release()
 
 # Use 10 threads for now
-threadManager = ThreadManager(50)
+threadManager = ThreadManager(4)
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -178,15 +178,18 @@ class JSONFuzzer(Fuzzer):
                                 if continueFlag:
                                     continueFlag = False
                             self.jsonObj[key][i] = self.jsonObj[key][i]*-2
-                    if random.randint(0,1):
-                        self.jsonObj[key].append("A")
-                    else:
-                        self.jsonObj[key].append(random.randint(-10,10))
+
+                    if len(self.jsonObj[key])<1000:
+                        toAdd = 1000 - len(self.jsonObj[key])
+                        for i in range(0, toAdd//2):
+                            self.jsonObj[key].append("A")
+                        for i in range(toAdd//2, 1000):
+                            self.jsonObj[key].append(random.randint(-10,10))
 
             if continueFlag:
                 for i in range(0, 500):
                     self.jsonObj[f"add{i}"] = "A"
-                for i in range(0, 500):
+                for i in range(500, 1000):
                     self.jsonObj[f"add{i}"] = random.randint(-10,10)
             ThreadManager.getInstance().addSem.release()
             return json.dumps(self.jsonObj)
