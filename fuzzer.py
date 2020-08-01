@@ -174,6 +174,8 @@ class JSONFuzzer(Fuzzer):
                                     continueFlag = False
                                 self.jsonObj[key][i] = self.jsonObj[key][i] + byte
                         if isinstance(self.jsonObj[key][i],int):
+                            if self.jsonObj[key][i] == 0:
+                                self.jsonObj[key][i] = 1
                             if len(str(self.jsonObj[key][i])) < 50:
                                 if continueFlag:
                                     continueFlag = False
