@@ -442,6 +442,26 @@ def runProcess(testStr):
     return ret
 
 
+def runProcessWithLtrace(testStr):
+    p = process("./" + sys.argv[1])
+    ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}"])
+    sleep(0.001)
+    p.sendline(testStr)
+    p.shutdown()
+    ret = p.poll(block = True)
+    p.stderr.close()
+    p.stdout.close()
+    output = []
+    try:
+        while True:
+            output.append(ltracer.recvline())
+    except:
+        pass
+    ltracer.shutdown()
+    ltracer.stderr.close()
+    ltracer.stdout.close()
+    return (ret,len(output))
+
 ######################
 ##### MAIN LOGIC #####
 ######################
@@ -474,7 +494,6 @@ else:
     fuzzer = PlaintextFuzzer(inputStr)
 ThreadManager.getInstance().startThreads(fuzzer)
 
-        
 ### 1. Read input.txt ###
 
 # Use regex to find out what kind of input (easier to mutate)
