@@ -62,7 +62,7 @@ class ThreadManager:
         self.stopSem.release()
 
 # Use 10 threads for now
-threadManager = ThreadManager(4)
+threadManager = ThreadManager(1)
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -357,71 +357,113 @@ class CSVFuzzer(Fuzzer):
 class PlaintextFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
+        # A list version of the sample input, separated by newline
+        self.lines = []
+        # Number of lines in the sample input
+        self.numLines = 0
+        # Variants of mutation to execute
+        self.variants = []
     
-    # Mutate with character padding
-    def plaintextPadding(self, testStr, count):
+    ########################
+    # Variants of mutation #
+    ########################
+
+    # Append character padding to overflow
+    def mutateOverflow(self, testStr, count):
         return testStr + "a"*count
 
-    # Mutate with null character
-    def plaintextNullMutate(self, testStr):
-        return testStr + "\0"
+    # Append null character
+    def mutateNull(self, testStr, count):
+        return testStr + "\0"*count
 
-    # Mutate with newline character
-    def plaintextNewlineMutate(self, testStr):
-        return testStr + "\n"
+    # Append newline character
+    def mutateNewline(self, testStr, count):
+        return testStr + "\n"*count
 
-    # Mutate with format string
-    def plaintextFormatMutate(self, testStr):
-        return testStr + "%x"
+    # Append format string
+    def mutateFormat(self, testStr, count):
+        return testStr + "%x"*count
 
-    # Mutate with all characters
-    def plaintextCharMutate(self, testStr):
+    # Append all ascii characters
+    def mutateAscii(self, testStr):
         count = 0
         while count <= 127:
             testStr = testStr + chr(count)
             count += 1
         return testStr
+
+    # Mutate into large positive
+    def mutateLargeNeg(self, testStr):
+        return "-99999999"
+    
+    # Mutate into large positive
+    def mutateLargePos(self, testStr):
+        return "99999999"
+
+    # Mutate into zero
+    def mutateZero(self, testStr):
+        return "0"
+
     def fuzz(self, mutated, stop):
-        # Fuzz a program that accepts plaintext
-        # Fuzz - empty input
+        # Prepare list of input lines
+        testStr = self.inputStr
+        self.lines = testStr.split("\n")
+        currLines = self.lines.copy()
+        # Prepare list of variants
+        variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
+        currVariants = variants.copy()
+        # Get total number of lines
+        self.numLines = len(self.lines)
+        # Begin recursive fuzz
+        print("@@@@@ Original testStr: "+testStr+"\n@@@@@ Number of lines: "+str(self.numLines))
+        self.recurseFuzz(mutated, stop, 0, currLines, currVariants)
+
+    # We fuzz via recursion (essentially depth-first logic)
+    # For every type of mutation in first input line, do every type of mutation for next line and so on...
+    def recurseFuzz(self, mutated, stop, currLine, currLines, currVariants):
+        # Base case: no more input lines
+        if currLine == self.numLines:
+            return
+        # Stop threads when required
         if stop():
             ThreadManager.getInstance().threadResult((mutated,0))
             return
-        exitCode = runProcess("")
-        ThreadManager.getInstance().threadResult(("",exitCode))
-        if exitCode != 0:
-            return
-        # Fuzz - null terminator
-        testStr = self.plaintextNullMutate("")
-        exitCode = runProcess(testStr)
-        ThreadManager.getInstance().threadResult((testStr,exitCode))
-        if exitCode != 0:
-            return
-        # Fuzz - newline
-        testStr = self.plaintextNewlineMutate("")
-        exitCode = runProcess(testStr)
-        ThreadManager.getInstance().threadResult((testStr,exitCode))
-        if exitCode != 0:
-            return
-        # Fuzz - format string
-        testStr = self.plaintextFormatMutate("")
-        exitCode = runProcess(testStr)
-        # Fuzz - all characters
-        testStr = self.plaintextCharMutate("")
-        exitCode = runProcess(testStr)
-        ThreadManager.getInstance().threadResult((testStr,exitCode))
-        if exitCode != 0:
-            return
-        # Fuzz - overflow
-        testStr = ""
-        while (True):
-            testStr = self.plaintextPadding(testStr, 10)
+        # If there are more variants of mutation to test, pop and mutate
+        while currVariants != []:
+            # Reset the current element
+            currLines[currLine] = self.lines[currLine]
+            variant = currVariants.pop(0)
+            if variant == "nothing":
+                pass
+            elif variant == "overflow":
+                currLines[currLine] = self.mutateOverflow(currLines[currLine], 10)
+                # print("@@@ Overflow mutating for index "+str(currLine)+"\n")
+            elif variant == "null":
+                currLines[currLine] = self.mutateNull(currLines[currLine], 1)
+            elif variant == "newline":
+                currLines[currLine] = self.mutateNewline(currLines[currLine], 1)
+            elif variant == "format":
+                currLines[currLine] = self.mutateFormat(currLines[currLine], 1)
+            elif variant == "ascii":
+                currLines[currLine] = self.mutateAscii(currLines[currLine])
+            elif variant == "largeNeg":
+                currLines[currLine] = self.mutateLargeNeg(currLines[currLine])
+            elif variant == "largePos":
+                currLines[currLine] = self.mutateLargePos(currLines[currLine])
+            elif variant == "zero":
+                currLines[currLine] = self.mutateZero(currLines[currLine])
+            else:
+                pass
+            # Recurse through the other lines
+            self.recurseFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
+            # Join the lines back into a string and fuzz
+            testStr = "\n".join(currLines)
+            print("@@@ In beginFuzz: testStr = "+testStr)
             exitCode = runProcess(testStr)
             ThreadManager.getInstance().threadResult((testStr,exitCode))
+            # If vulnerability found, return
             if exitCode != 0:
                 return
-            if len(testStr) > 1000:
-                break
 
         # No vulnerability found
         return ThreadManager.getInstance().threadResult(("",0))
