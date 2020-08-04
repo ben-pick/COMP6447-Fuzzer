@@ -406,6 +406,10 @@ class PlaintextFuzzer(Fuzzer):
     def mutateZero(self, testStr):
         return "0"
 
+    ###########
+    # Fuzzing #
+    ###########
+
     def fuzz(self, mutated, stop):
         # Prepare list of input lines
         testStr = self.inputStr
