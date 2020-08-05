@@ -9,7 +9,7 @@ import enum
 import re
 import random
 import copy
-
+import os
 
 ############################
 ##### HELPER FUNCTIONS #####
@@ -31,6 +31,8 @@ class ThreadManager:
             ThreadManager.__instance = self
             self.count = count
             self.stopFlag = False
+            self.codeFlows = dict()
+            self.codeFlowCount = 0
             self.stopSem = threading.Semaphore(1)
             self.addSem = threading.Semaphore(1)
     # Starts n number of threads (which is specified on instantiation), with the fuzzer you want to fuzz with
@@ -61,8 +63,80 @@ class ThreadManager:
                 self.stopSem.release()
         self.stopSem.release()
 
+    def threadResultWithLtrace(self,result,ltrace):
+        (i, e) = result
+        if ltrace is not None:
+            (parsedLtrace,originalLtraceList) = ltraceParser(ltrace)
+            # calls = tuple(i for i in parsedLtrace)
+            # need to convert to a tuple, lists cannot be hashed
+            calls = tuple(i[0] for i in parsedLtrace)
+            # print(calls)
+            self.stopSem.acquire()
+            if self.codeFlows.get(calls) is None:
+                self.codeFlows[calls] = (1,i,originalLtraceList)
+                self.codeFlowCount +=1
+            else:
+                (count, testStr, originalLtraceList) = self.codeFlows[calls]
+                self.codeFlows[calls] = (count+1,i,originalLtraceList)
+                self.codeFlowCount +=1
+        else:
+            self.stopSem.acquire()
+        if not self.stopFlag:
+            if e == 0:
+                print("\n@@@ RESULT")
+                print("@@@ No vulnerabilities found...yet")
+            elif e == -11:
+                # Save output here
+                print("\n@@@ RESULT")
+                print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+                f = open("bad.txt","w+")
+                f.write(i)
+                f.close()
+                self.stopFlag = True
+                reportDetails = ""
+                count =1
+                cwd = os.getcwd()
+                traceReportFile = os.path.join(cwd,"trace", "trace.txt")
+                for key in self.codeFlows:
+                    codePath = ""
+                    sampleInputFile = os.path.join(cwd,"trace", str(count),"input.txt")
+                    ltraceOutputFile = os.path.join(cwd,"trace", str(count),"ltraceoutput.txt")
+                    os.makedirs(os.path.dirname(sampleInputFile), exist_ok=True)
+                    s=open(sampleInputFile,"w+")
+                    s.write(self.codeFlows.get(key)[1])
+                    s.close()
+                    l=open(ltraceOutputFile,"w+")
+                    l.write('\n'.join(self.codeFlows.get(key)[2]))
+                    l.close()
+                    for i in range(0,len(key)):
+                        if i is not len(key)-1:
+                            codePath+= key[i] + " --> "
+                        else:
+                            codePath+= key[i]
+                    reportDetails += f"""
+{count}) {codePath} ran {self.codeFlows.get(key)[0]} times
+                    """
+                    count +=1
+
+                traceReport = f"""Trace Report
+
+Total Runs: {self.codeFlowCount}
+
+Code Paths:
+
+{reportDetails}
+
+Folders based on code paths have been generated...
+                """
+                os.makedirs(os.path.dirname(traceReportFile), exist_ok=True)
+                t=open(traceReportFile,"w+")
+                t.write(traceReport)
+                t.close()
+                self.stopSem.release()
+        self.stopSem.release()
+
 # Use 10 threads for now
-threadManager = ThreadManager(1)
+threadManager = ThreadManager(4)
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -119,10 +193,10 @@ class JSONFuzzer(Fuzzer):
         m = self.inputStr
         while True:
             if stop():
-                ThreadManager.getInstance().threadResult((mutated,0))
+                ThreadManager.getInstance().threadResultWithLtrace((mutated,0),None)
                 return
-            exitCode = runProcess(m)
-            ThreadManager.getInstance().threadResult((m,exitCode))
+            (exitCode, ltrace) = runProcessWithLtrace(m)
+            ThreadManager.getInstance().threadResultWithLtrace((m,exitCode),ltrace)
             if exitCode != 0:
                 return
             m = self.mutate()
@@ -478,7 +552,7 @@ class PlaintextFuzzer(Fuzzer):
 # Runs a process, returns exit code
 def runProcess(testStr):
     p = process("./"+sys.argv[1])
-    # print("@@@ Sending: " + testStr)
+    print("@@@ Sending: " + testStr)
     # print(len(testStr))
     p.sendline(testStr)
     p.shutdown()
@@ -490,7 +564,7 @@ def runProcess(testStr):
 
 def runProcessWithLtrace(testStr):
     p = process("./" + sys.argv[1])
-    ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}"])
+    ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}", f"-s {99999999}"])
     sleep(0.001)
     p.sendline(testStr)
     p.shutdown()
@@ -506,7 +580,28 @@ def runProcessWithLtrace(testStr):
     ltracer.shutdown()
     ltracer.stderr.close()
     ltracer.stdout.close()
-    return (ret,len(output))
+    return (ret,output)
+
+def ltraceParser(ltraceList):
+    codeFlow = []
+    originalList = []
+    # originalLtrace = ""
+    for i in range(0, len(ltraceList)-1):
+        currentCall = ltraceList[i].decode()
+        # originalLtrace += currentCall
+        originalList.append(currentCall)
+        libraryCall = re.search(".*\(",currentCall)
+        resultOfCall = re.search("\=.*",currentCall)
+
+        if libraryCall is not None and resultOfCall is not None:
+            # remove the (
+            libraryCall = libraryCall.group()
+            libraryCall = libraryCall[:len(libraryCall)-1]
+            # remove the  =
+            resultOfCall = resultOfCall.group()
+            resultOfCall = resultOfCall[2:]
+            codeFlow.append((libraryCall, resultOfCall))
+    return (codeFlow,originalList)
 
 ######################
 ##### MAIN LOGIC #####
