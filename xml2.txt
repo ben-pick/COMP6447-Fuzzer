@@ -1,0 +1,15 @@
+<html>
+    <head>
+        <link href="http://somewebsite.com" />
+    </head>
+    <body>
+        <h1>I'm not a web developer. still</h1>
+    </body>
+
+    <div class="no_add" id="yes"><a href="http://google.com">Here is some link...</a><link href="http://somewebsite.com" /><span>text</span></div>
+
+
+    <tail>
+        <a href="http://bing.com">Footer link</a>
+    </tail>
+</html>
