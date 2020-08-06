@@ -132,7 +132,7 @@ class JSONFuzzer(Fuzzer):
         return res[1:len(res)-1]
     
     def getFormatStr(self, num):
-        return "%s" * num;    
+        return "%s" * num
 
     def mutate(self):
         if len(self.rules) != 0 :
@@ -174,8 +174,6 @@ class JSONFuzzer(Fuzzer):
                                     continueFlag = False
                                 self.jsonObj[key][i] = self.jsonObj[key][i] + byte
                         if isinstance(self.jsonObj[key][i],int):
-                            if self.jsonObj[key][i] == 0:
-                                self.jsonObj[key][i] = 1
                             if len(str(self.jsonObj[key][i])) < 50:
                                 if continueFlag:
                                     continueFlag = False
@@ -364,8 +362,10 @@ class PlaintextFuzzer(Fuzzer):
         # Number of lines in the sample input
         self.numLines = 0
         # Variants of mutation to execute
-        self.variants = []
-    
+        self.variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
+        # A list of possibly bad bytes
+        self.badBytes = self.getBadBytes()
+
     ########################
     # Variants of mutation #
     ########################
@@ -406,27 +406,67 @@ class PlaintextFuzzer(Fuzzer):
     def mutateZero(self, testStr):
         return "0"
 
-    ###########
-    # Fuzzing #
-    ###########
+    # Mutate a random char in a list of strings
+    def randomCharMutate(self, currLines):
+        pickLine = random.randint(0, len(currLines)-1)
+        pickChar = random.randint(0, len(currLines[pickLine])-1)
+        pickRandomChar = self.badBytes[random.randint(0, len(self.badBytes)-1)]
+        currLines[pickLine] = currLines[pickLine][:pickChar] + pickRandomChar + currLines[pickLine][pickChar+1:]
+        return currLines
 
+    ####################
+    # Helper functions #
+    ####################
+
+    # Produce and return a list containing 
+    def getBadBytes(self):
+        l = []
+        count = 0
+        while count <= 127:
+            if count < 48 or count > 122:
+                l.append(chr(count))
+            count += 1
+        l = l + ["a", "\0", "\n", "%x", "-99999999", "99999999", "0"]
+        return l
+
+    #################
+    # Fuzzing logic #
+    #################
+
+    # Does two rounds of fuzzing
+    # 1. Appending or changing characters exhaustively using a finite list of well-known edge cases
+    # 2. Mutating one random character each time, resetting the string in between
     def fuzz(self, mutated, stop):
+        # ThreadManager.getInstance().addSem.acquire()
+        # ThreadManager.getInstance().addSem.release()
         # Prepare list of input lines
         testStr = self.inputStr
         self.lines = testStr.split("\n")
         currLines = self.lines.copy()
         # Prepare list of variants
-        variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
-        currVariants = variants.copy()
+        currVariants = self.variants.copy()
         # Get total number of lines
         self.numLines = len(self.lines)
         # Begin recursive fuzz
         print("@@@@@ Original testStr: "+testStr+"\n@@@@@ Number of lines: "+str(self.numLines))
-        self.recurseFuzz(mutated, stop, 0, currLines, currVariants)
+        self.basicFuzz(mutated, stop, 0, currLines, currVariants)
+        # Random character mutation
+        print("@@@@@ Starting endless mutation")
+        m = self.inputStr
+        while True:
+            if stop():
+                ThreadManager.getInstance().threadResult((mutated,0))
+                return
+            print("@@@ Testing: "+m)
+            exitCode = runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode))
+            if exitCode == -11:
+                return
+            m = "\n".join(self.randomCharMutate(self.lines.copy()))
 
     # We fuzz via recursion (essentially depth-first logic)
     # For every type of mutation in first input line, do every type of mutation for next line and so on...
-    def recurseFuzz(self, mutated, stop, currLine, currLines, currVariants):
+    def basicFuzz(self, mutated, stop, currLine, currLines, currVariants):
         # Base case: no more input lines
         if currLine == self.numLines:
             return
@@ -461,14 +501,14 @@ class PlaintextFuzzer(Fuzzer):
             else:
                 pass
             # Recurse through the other lines
-            self.recurseFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
+            self.basicFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
             # Join the lines back into a string and fuzz
             testStr = "\n".join(currLines)
             print("@@@ In beginFuzz: testStr = "+testStr)
             exitCode = runProcess(testStr)
             ThreadManager.getInstance().threadResult((testStr,exitCode))
             # If vulnerability found, return
-            if exitCode != 0:
+            if exitCode == -11:
                 return
 
         # No vulnerability found
@@ -487,26 +527,6 @@ def runProcess(testStr):
     p.stdout.close()
     return ret
 
-
-def runProcessWithLtrace(testStr):
-    p = process("./" + sys.argv[1])
-    ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}"])
-    sleep(0.001)
-    p.sendline(testStr)
-    p.shutdown()
-    ret = p.poll(block = True)
-    p.stderr.close()
-    p.stdout.close()
-    output = []
-    try:
-        while True:
-            output.append(ltracer.recvline())
-    except:
-        pass
-    ltracer.shutdown()
-    ltracer.stderr.close()
-    ltracer.stdout.close()
-    return (ret,len(output))
 
 ######################
 ##### MAIN LOGIC #####
@@ -540,6 +560,7 @@ else:
     fuzzer = PlaintextFuzzer(inputStr)
 ThreadManager.getInstance().startThreads(fuzzer)
 
+        
 ### 1. Read input.txt ###
 
 # Use regex to find out what kind of input (easier to mutate)
