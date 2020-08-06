@@ -418,7 +418,8 @@ class PlaintextFuzzer(Fuzzer):
     # Helper functions #
     ####################
 
-    # Produce and return a list containing 
+    # Produce and return a list containing ascii characters (minus the alphabet)
+    # and some more potentially troublesome bytes
     def getBadBytes(self):
         l = []
         count = 0
