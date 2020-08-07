@@ -214,25 +214,7 @@ class CSVFuzzer(Fuzzer):
         self.valuesPerLine = self.commasPerLine + 1
         self.rules = ["overflow_lines", "overflow_values", "minus", "plus", "zero", 
                         "large_minus", "large_plus", "null_term", "format_string", "new_line"]
-    # # Checks if input is CSV
-    # # Idea:
-    # # - count the number of commas for each line
-    # # - every line should have the same number of commas
-    # def isCSV(lines):
-    #     # Check that there is more than one line
-    #     # and at least 1 comma
-    #     # I might be wrong on these, for now it passes the binaries given
-    #     if len(lines) > 1 and lines[0].count(",") > 0:
-    #         num_comma = lines[0].count(",")
-    #         for l in lines:
-    #             if l.count(",") != num_comma:
-    #                 return False
-    #         return True
-    #     return False
-
-    #count lines in input string
-    #count commas in first line
-    #if format is CSV, total comma count will be equal to lines * first line comma count
+    
     def isType(self):
         line_count = self.inputStr.count('\n')
         lines = self.inputStr.split("\n")
