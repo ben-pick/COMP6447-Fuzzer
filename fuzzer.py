@@ -243,12 +243,12 @@ class CSVFuzzer(Fuzzer):
             inputStr = inputStr + self.craftLine()
         return inputStr
 
-    # forms a valid line of 10 A's
+    # forms a valid line of 100 A's in each valu
     def craftLongLine(self):
         CSVline = '\n'
         for i in range(0, self.commasPerLine):
-            CSVline += 'A'*9 + ','
-        CSVline += 'A'*9
+            CSVline += 'A'*100 + ','
+        CSVline += 'A'*100
         return CSVline
     
     def appendLongOverflow(self, inputStr):
@@ -306,6 +306,14 @@ class CSVFuzzer(Fuzzer):
 
     def appendNewLine(self, inputStr):
         return inputStr+'\n'
+
+    # Returns a line of
+    def mutateLine(self, inputStr, ch):
+        changedLine = ''
+        for i in range(0, self.commasPerLine):
+            changedLine += str(ch) + ','
+        changedLine += str(ch)
+        return changedLine
     
     def fuzz(self, mutated, stop):
         # Fuzz a program with csv file format
@@ -344,13 +352,61 @@ class CSVFuzzer(Fuzzer):
                 payload = self.appendNewLine(payload)
             else:
                 pass
-
             exitCode = runProcess(payload)
+            ThreadManager.getInstance().threadResult((payload,exitCode))
+            if exitCode != 0:
+                return
+            
+            linesCopy = self.lines
+            self.lineByLineFuzz(mutated, stop, 0, linesCopy, self.rules)
+
+        return ThreadManager.getInstance().threadResult(("",0))
+
+    def lineByLineFuzz(self, mutated, stop, currLine, payload, cases):
+        if(currLine == len(self.lines)):
+            return
+
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0))
+            return
+
+        payload[currLine] = self.lines[currLine]
+        cases = self.rules
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                continue
+            elif(case == "overflow_values"):
+                payload[currLine] = self.mutateLine(payload[currLine], "A"*100)
+            elif(case == "minus"):
+                payload[currLine] = self.mutateLine(payload[currLine], -1)
+            elif(case == "plus"):
+                payload[currLine] = self.mutateLine(payload[currLine], 1)
+            elif(case == "zero"):
+                payload[currLine] = self.mutateLine(payload[currLine], 0)
+            elif(case == "large_minus"):
+                payload[currLine] = self.mutateLine(payload[currLine], -999999999999999999999999999999999999999999999999999999)
+            elif(case == "large_plus"):
+                payload[currLine] = self.mutateLine(payload[currLine], 999999999999999999999999999999999999999999999999999999)
+            elif(case == "null_term"):
+                payload[currLine] = self.mutateLine(payload[currLine], "\0")
+            elif(case == "format_string"):
+                payload[currLine] = self.mutateLine(payload[currLine], "%x")
+            elif(case == "new_line"):
+                payload[currLine] = self.mutateLine(payload[currLine], "\n")
+            else:
+                pass
+            #print(payload)
+            self.lineByLineFuzz(mutated, stop, currLine+1, payload, cases)
+            final = "\n".join(payload)
+            print(final)
+            exitCode = runProcess(final)
             ThreadManager.getInstance().threadResult((payload,exitCode))
             if exitCode != 0:
                 return
 
         return ThreadManager.getInstance().threadResult(("",0))
+
 
 class PlaintextFuzzer(Fuzzer):
     def __init__(self, inputStr):
