@@ -212,6 +212,8 @@ class CSVFuzzer(Fuzzer):
         self.lines = self.inputStr.split("\n")
         self.commasPerLine = self.lines[0].count(",")
         self.valuesPerLine = self.commasPerLine + 1
+        self.rules = ["overflow_lines", "overflow_values", "minus", "plus", "zero", 
+                        "large_minus", "large_plus", "null_term", "format_string", "new_line"]
     # # Checks if input is CSV
     # # Idea:
     # # - count the number of commas for each line
@@ -255,7 +257,7 @@ class CSVFuzzer(Fuzzer):
         return CSVline
 
     def appendOverflow(self, inputStr):
-        for i in range(10):
+        for i in range(1000):
             inputStr = inputStr + self.craftLine()
         return inputStr
 
@@ -263,14 +265,39 @@ class CSVFuzzer(Fuzzer):
     def craftLongLine(self):
         CSVline = '\n'
         for i in range(0, self.commasPerLine):
-            CSVline += 'A'*9+','
-        CSVline += 'A'
+            CSVline += 'A'*9 + ','
+        CSVline += 'A'*9
         return CSVline
     
     def appendLongOverflow(self, inputStr):
         inputStr = inputStr + self.craftLongLine()
         return inputStr
-    
+
+    def appendNegative(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '-1' + ','
+        newLine += '-1'
+        inputStr = inputStr + newLine
+        return inputStr
+        
+    def appendPositive(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '1' + ','
+        newLine += '1'
+        inputStr = inputStr + newLine
+        return inputStr
+
+    # append a line of 0's
+    def appendZero(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '0,'
+        newLine += '0'
+        inputStr = inputStr + newLine
+        return inputStr   
+
     # Append a line with large positive values
     def largePositive(self, inputStr):
         newLine = '\n'
@@ -289,15 +316,15 @@ class CSVFuzzer(Fuzzer):
         inputStr = inputStr + newLine
         return inputStr
     
-    # append a line of 0's
-    def appendZero(self, inputStr):
-        newLine = '\n'
-        for i in range(0, self.commasPerLine):
-            newLine += '0,'
-        newLine += '0'
-        inputStr = inputStr + newLine
-        return inputStr
+    def nullTerminator(self, inputStr):
+        return inputStr+'\0'
 
+    def appendFormatString(self, inputStr):
+        return inputStr+'%s'
+
+    def appendNewLine(self, inputStr):
+        return inputStr+'\n'
+    
     def fuzz(self, mutated, stop):
         # Fuzz a program with csv file format
         if stop():
@@ -308,50 +335,39 @@ class CSVFuzzer(Fuzzer):
         if exitCode != 0:
             return
 
-        # Fuzz - Overflow via appending single character csv line - e.g. A,A,A,A,A
-        overflow = self.inputStr
-        while (True):
-            overflow = self.appendOverflow(overflow)
-            exitCode = runProcess(overflow)
-            ThreadManager.getInstance().threadResult((overflow,exitCode))
+        # Fuzzing for initial cases first
+        payload = self.inputStr
+        cases = self.rules
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                payload = self.appendOverflow(payload)
+            elif(case == "overflow_values"):
+                payload = self.appendLongOverflow(payload)
+            elif(case == "minus"):
+                payload = self.appendNegative(payload)
+            elif(case == "plus"):
+                payload = self.appendPositive(payload)
+            elif(case == "zero"):
+                payload = self.appendZero(payload)
+            elif(case == "large_minus"):
+                payload = self.largeNegative(payload)
+            elif(case == "large_plus"):
+                payload = self.largePositive(payload)
+            elif(case == "null_term"):
+                payload = self.nullTerminator(payload)
+            elif(case == "format_string"):
+                payload = self.appendFormatString(payload)
+            elif(case == "new_line"):
+                payload = self.appendNewLine(payload)
+            else:
+                pass
+
+            exitCode = runProcess(payload)
+            ThreadManager.getInstance().threadResult((payload,exitCode))
             if exitCode != 0:
                 return
-            if len(overflow) > 10000: 
-                break
 
-        # Fuzz - Overflow by appending 10 character values csv line - AAAAAAAAAA,AAAA... etc.
-        overflow2 = self.inputStr
-        while (True):
-            overflow2 = self.appendLongOverflow(overflow2)
-            exitCode = runProcess(overflow2)
-            ThreadManager.getInstance().threadResult((overflow2,exitCode))
-            if exitCode != 0:
-                return
-            if len(overflow2) > 10000:
-                break
-
-        # Fuzz - Payload with large Positive number
-        payload = self.largePositive(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
-        if exitCode != 0:
-            return
-
-        # Fuzz - Payload with large negative number
-        payload = self.largeNegative(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
-        if exitCode != 0:
-            return
-        
-        # Fuzz - Payload with 0's
-        payload = self.appendZero(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
-        if exitCode != 0:
-            return
-
-        # No vulnerability found
         return ThreadManager.getInstance().threadResult(("",0))
 
 class PlaintextFuzzer(Fuzzer):
