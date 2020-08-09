@@ -213,7 +213,7 @@ class CSVFuzzer(Fuzzer):
         self.commasPerLine = self.lines[0].count(",")
         self.valuesPerLine = self.commasPerLine + 1
         self.rules = ["overflow_lines", "overflow_values", "minus", "plus", "zero", 
-                        "large_minus", "large_plus", "null_term", "format_string", "new_line"]
+                        "large_minus", "large_plus", "null_term", "format_string", "new_line", "ascii"]
     
     def isType(self):
         line_count = self.inputStr.count('\n')
@@ -307,13 +307,26 @@ class CSVFuzzer(Fuzzer):
     def appendNewLine(self, inputStr):
         return inputStr+'\n'
 
-    # Returns a line of
+    # Returns a line of ch
     def mutateLine(self, inputStr, ch):
         changedLine = ''
         for i in range(0, self.commasPerLine):
             changedLine += str(ch) + ','
         changedLine += str(ch)
         return changedLine
+    
+    # will append a valid csv line of ascii val e.g. if val=50 -> line = 2,2,2
+    def appendAsciiLine(self, inputStr, val):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += chr(val) + ','
+        newLine += chr(val)
+        inputStr = inputStr + newLine
+        return inputStr
+
+    def appendAscii(self, inputStr, val):
+        return inputStr + "\n" + chr(val)
+        #return chr(val)
     
     def fuzz(self, mutated, stop):
         # Fuzz a program with csv file format
@@ -324,10 +337,10 @@ class CSVFuzzer(Fuzzer):
         ThreadManager.getInstance().threadResult(("",exitCode))
         if exitCode != 0:
             return
-
-        # Fuzzing for initial cases first
+        
+        # Fuzzing for initial appending cases first
         payload = self.inputStr
-        cases = self.rules
+        cases = copy.deepcopy(self.rules)
         while(cases != []):
             case = cases.pop(0)
             if(case == "overflow_lines"):
@@ -350,28 +363,46 @@ class CSVFuzzer(Fuzzer):
                 payload = self.appendFormatString(payload)
             elif(case == "new_line"):
                 payload = self.appendNewLine(payload)
+            elif(case == "ascii"):
+                for i in range(0, 127):
+                    payload = self.inputStr
+                    payload = self.appendAsciiLine(payload, i)
+                    exitCode = runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode))
+                    if exitCode != 0:
+                        return
+                    payload = self.inputStr
+                    payload = self.appendAscii(payload, i)
+                    exitCode = runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode))
+                    if exitCode != 0:
+                        return
+                pass
             else:
                 pass
             exitCode = runProcess(payload)
             ThreadManager.getInstance().threadResult((payload,exitCode))
             if exitCode != 0:
                 return
-            
-            linesCopy = self.lines
-            self.lineByLineFuzz(mutated, stop, 0, linesCopy, self.rules)
+
+        
+        linesCopy = self.lines
+        cases2 = copy.deepcopy(self.rules)
+        self.lineByLineFuzz(mutated, stop, 0, linesCopy, cases2)
+        self.replacementFuzz(mutated, stop)  
 
         return ThreadManager.getInstance().threadResult(("",0))
 
     def lineByLineFuzz(self, mutated, stop, currLine, payload, cases):
         if(currLine == len(self.lines)):
             return
-
+        
         if stop():
             ThreadManager.getInstance().threadResult((mutated,0))
             return
 
         payload[currLine] = self.lines[currLine]
-        cases = self.rules
+        cases = copy.deepcopy(self.rules)
         while(cases != []):
             case = cases.pop(0)
             if(case == "overflow_lines"):
@@ -396,17 +427,59 @@ class CSVFuzzer(Fuzzer):
                 payload[currLine] = self.mutateLine(payload[currLine], "\n")
             else:
                 pass
-            #print(payload)
-            self.lineByLineFuzz(mutated, stop, currLine+1, payload, cases)
             final = "\n".join(payload)
-            print(final)
             exitCode = runProcess(final)
             ThreadManager.getInstance().threadResult((payload,exitCode))
             if exitCode != 0:
                 return
+        self.lineByLineFuzz(mutated, stop, currLine+1, payload, cases)
 
         return ThreadManager.getInstance().threadResult(("",0))
 
+    def replacementFuzz(self, mutated, stop):
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0))
+            return
+
+        payload = self.inputStr
+        cases = copy.deepcopy(self.rules)
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                payload = "A"*10000
+            elif(case == "overflow_values"):
+                pass
+            elif(case == "minus"):
+                payload = "-1"
+            elif(case == "plus"):
+                payload = "1"
+            elif(case == "zero"):
+                payload = "0"
+            elif(case == "large_minus"):
+                payload = "-999999999999999999999999999999999999999999999999999999"
+            elif(case == "large_plus"):
+                payload = "999999999999999999999999999999999999999999999999999999"
+            elif(case == "null_term"):
+                payload = "\0"
+            elif(case == "format_string"):
+                payload = "%x"
+            elif(case == "new_line"):
+                payload = "\n"
+            elif(case == "ascii"):
+                for i in range(0, 127):
+                    payload = chr(i)
+                    exitCode = runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode))
+                    if exitCode != 0:
+                        return
+                pass
+            else:
+                pass
+            print(payload)
+            exitCode = runProcess(payload)
+            ThreadManager.getInstance().threadResult((payload,exitCode))
+            if exitCode != 0:
+                return
 
 class PlaintextFuzzer(Fuzzer):
     def __init__(self, inputStr):
