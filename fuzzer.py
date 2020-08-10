@@ -61,8 +61,8 @@ class ThreadManager:
                 self.stopSem.release()
         self.stopSem.release()
 
-# Use 10 threads for now
-threadManager = ThreadManager(1)
+threadManager = ThreadManager(len(os.sched_getaffinity(0)))
+print(len(os.sched_getaffinity(0)))
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -99,9 +99,12 @@ class JSONFuzzer(Fuzzer):
         # Hopefully will overwrite some value and make it invalid
         self.formatLimit = 1000
         self.rules = []
+        self.infiniteMutation = False
+        self.bigMutation = False
         for rule in JSONRules :
             self.rules.append(rule.value)
         self.bytesToAdd = ["\0", "%s", "A", "\n"]
+        self.badBytes = self.getBadBytes()
         try:
             self.jsonObj = json.loads(self.inputStr)
         except:
@@ -125,7 +128,10 @@ class JSONFuzzer(Fuzzer):
             ThreadManager.getInstance().threadResult((m,exitCode))
             if exitCode != 0:
                 return
-            m = self.mutate()
+            if self.infiniteMutation:
+                m = self.mutateInfinitely()
+            else:
+                m = self.mutate()
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
@@ -133,6 +139,47 @@ class JSONFuzzer(Fuzzer):
     
     def getFormatStr(self, num):
         return "%s" * num
+
+    def getBadBytes(self):
+        l = []
+        count = 0
+        while count <= 127:
+            if count < 48 or count > 122:
+                l.append(chr(count))
+            count += 1
+        l = l + ["a", "\0", "\n", "%s"]
+        return l
+    def mutateInfinitely(self):
+        # We don't need semaphore, we arent holding any state
+        temp = copy.deepcopy(self.jsonObj)
+        randomKey = random.choice([i for i in temp])
+        if isinstance(temp[randomKey], int):
+            temp[randomKey] = random.randint(-2147483648, 2147483648)
+        if isinstance(temp[randomKey], str):
+            temp[randomKey] = self.strMutate(temp[randomKey])
+        if isinstance(temp[randomKey],list):
+            randomIndex = random.randint(0,len(temp[randomKey])-1)
+            randomElem = temp[randomKey][randomIndex]
+            if isinstance(randomElem,str):
+                temp[randomKey][randomIndex] = self.strMutate(randomElem)
+            elif isinstance(randomElem, int):
+                temp[randomKey][ranomIndex] = random.randint(-2147483648, 2147483648)
+        return json.dumps(temp)
+
+    def strMutate(self,string):
+        strList = list(string)
+        mutationSize = random.randint(1,len(string)+5)
+        mutationSpots = []
+        while len(mutationSpots) < mutationSize:
+            randomSpot = random.randint(0,len(string)+5)
+            if randomSpot not in mutationSpots:
+                mutationSpots.append(randomSpot)
+        for i in mutationSpots:
+            if i >= len(strList):
+                strList.append(self.badBytes[random.randint(0,len(self.badBytes)-1)])
+            else:
+                strList[i] = self.badBytes[random.randint(0,len(self.badBytes)-1)]
+        return "".join(strList)
 
     def mutate(self):
         if len(self.rules) != 0 :
@@ -155,42 +202,48 @@ class JSONFuzzer(Fuzzer):
             continueFlag = True
             for key in self.jsonObj:
                 if isinstance(self.jsonObj[key], str):
-                    if len(self.jsonObj[key]) < 1000:
+                    if len(self.jsonObj[key]) < 200:
                         if continueFlag:
                             continueFlag = False
                     self.jsonObj[key] = self.jsonObj[key] + byte
                 if isinstance(self.jsonObj[key], int):
                     if self.jsonObj[key] == 0:
                         self.jsonObj[key] = 1
-                    if len(str(self.jsonObj[key])) < 50:
+                    if len(str(self.jsonObj[key])) < 20:
                         if continueFlag:
                             continueFlag = False
                     self.jsonObj[key] = self.jsonObj[key]*-2
                 if isinstance(self.jsonObj[key], list):
-                    for i in range(0,len(self.jsonObj[key])-1):
+                    for i in range(0,len(self.jsonObj[key])):
                         if isinstance(self.jsonObj[key][i],str):
-                            if len(self.jsonObj[key][i]) < 1000:
+                            if len(self.jsonObj[key][i]) < 200:
                                 if continueFlag:
                                     continueFlag = False
                                 self.jsonObj[key][i] = self.jsonObj[key][i] + byte
                         if isinstance(self.jsonObj[key][i],int):
-                            if len(str(self.jsonObj[key][i])) < 50:
+                            if self.jsonObj[key][i] == 0:
+                                self.jsonObj[key][i] = 1
+                            if len(str(self.jsonObj[key][i])) < 20:
                                 if continueFlag:
                                     continueFlag = False
-                            self.jsonObj[key][i] = self.jsonObj[key][i]*-2
+                                self.jsonObj[key][i] = self.jsonObj[key][i]*-2
 
                     if len(self.jsonObj[key])<1000:
-                        toAdd = 1000 - len(self.jsonObj[key])
+                        toAdd = 100 - len(self.jsonObj[key])
                         for i in range(0, toAdd//2):
                             self.jsonObj[key].append("A")
                         for i in range(toAdd//2, 1000):
                             self.jsonObj[key].append(random.randint(-10,10))
 
-            if continueFlag:
-                for i in range(0, 500):
+            if continueFlag and not self.bigMutation:
+                self.bigMutation = True
+                for i in range(0, 50):
                     self.jsonObj[f"add{i}"] = "A"
-                for i in range(500, 1000):
+                for i in range(50, 100):
                     self.jsonObj[f"add{i}"] = random.randint(-10,10)
+            elif continueFlag and self.bigMutation:
+                self.infiniteMutation = True
+                self.jsonObj = json.loads(self.inputStr)
             ThreadManager.getInstance().addSem.release()
             return json.dumps(self.jsonObj)
 
