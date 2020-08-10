@@ -528,7 +528,6 @@ class CSVFuzzer(Fuzzer):
                 pass
             else:
                 pass
-            print(payload)
             exitCode = runProcess(payload)
             ThreadManager.getInstance().threadResult((payload,exitCode))
             if exitCode != 0:
