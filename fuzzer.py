@@ -135,8 +135,9 @@ Folders based on code paths have been generated...
                 self.stopSem.release()
         self.stopSem.release()
 
-# Use 10 threads for now
-threadManager = ThreadManager(4)
+
+threadManager = ThreadManager(len(os.sched_getaffinity(0)))
+print(len(os.sched_getaffinity(0)))
 
 # All specific fuzzers inherit from this
 class Fuzzer:
@@ -173,9 +174,12 @@ class JSONFuzzer(Fuzzer):
         # Hopefully will overwrite some value and make it invalid
         self.formatLimit = 1000
         self.rules = []
+        self.infiniteMutation = False
+        self.bigMutation = False
         for rule in JSONRules :
             self.rules.append(rule.value)
         self.bytesToAdd = ["\0", "%s", "A", "\n"]
+        self.badBytes = self.getBadBytes()
         try:
             self.jsonObj = json.loads(self.inputStr)
         except:
@@ -199,14 +203,58 @@ class JSONFuzzer(Fuzzer):
             ThreadManager.getInstance().threadResultWithLtrace((m,exitCode),ltrace)
             if exitCode != 0:
                 return
-            m = self.mutate()
+            if self.infiniteMutation:
+                m = self.mutateInfinitely()
+            else:
+                m = self.mutate()
     
     def checkFormatStrNum(self,inputStr):
         res = re.search(r"\%(.*?)\$", inputStr).group()
         return res[1:len(res)-1]
     
     def getFormatStr(self, num):
-        return "%s" * num;    
+        return "%s" * num
+
+    def getBadBytes(self):
+        l = []
+        count = 0
+        while count <= 127:
+            if count < 48 or count > 122:
+                l.append(chr(count))
+            count += 1
+        l = l + ["a", "\0", "\n", "%s"]
+        return l
+    def mutateInfinitely(self):
+        # We don't need semaphore, we arent holding any state
+        temp = copy.deepcopy(self.jsonObj)
+        randomKey = random.choice([i for i in temp])
+        if isinstance(temp[randomKey], int):
+            temp[randomKey] = random.randint(-2147483648, 2147483648)
+        if isinstance(temp[randomKey], str):
+            temp[randomKey] = self.strMutate(temp[randomKey])
+        if isinstance(temp[randomKey],list):
+            randomIndex = random.randint(0,len(temp[randomKey])-1)
+            randomElem = temp[randomKey][randomIndex]
+            if isinstance(randomElem,str):
+                temp[randomKey][randomIndex] = self.strMutate(randomElem)
+            elif isinstance(randomElem, int):
+                temp[randomKey][ranomIndex] = random.randint(-2147483648, 2147483648)
+        return json.dumps(temp)
+
+    def strMutate(self,string):
+        strList = list(string)
+        mutationSize = random.randint(1,len(string)+5)
+        mutationSpots = []
+        while len(mutationSpots) < mutationSize:
+            randomSpot = random.randint(0,len(string)+5)
+            if randomSpot not in mutationSpots:
+                mutationSpots.append(randomSpot)
+        for i in mutationSpots:
+            if i >= len(strList):
+                strList.append(self.badBytes[random.randint(0,len(self.badBytes)-1)])
+            else:
+                strList[i] = self.badBytes[random.randint(0,len(self.badBytes)-1)]
+        return "".join(strList)
 
     def mutate(self):
         if len(self.rules) != 0 :
@@ -229,44 +277,48 @@ class JSONFuzzer(Fuzzer):
             continueFlag = True
             for key in self.jsonObj:
                 if isinstance(self.jsonObj[key], str):
-                    if len(self.jsonObj[key]) < 1000:
+                    if len(self.jsonObj[key]) < 200:
                         if continueFlag:
                             continueFlag = False
                     self.jsonObj[key] = self.jsonObj[key] + byte
                 if isinstance(self.jsonObj[key], int):
                     if self.jsonObj[key] == 0:
                         self.jsonObj[key] = 1
-                    if len(str(self.jsonObj[key])) < 50:
+                    if len(str(self.jsonObj[key])) < 20:
                         if continueFlag:
                             continueFlag = False
                     self.jsonObj[key] = self.jsonObj[key]*-2
                 if isinstance(self.jsonObj[key], list):
-                    for i in range(0,len(self.jsonObj[key])-1):
+                    for i in range(0,len(self.jsonObj[key])):
                         if isinstance(self.jsonObj[key][i],str):
-                            if len(self.jsonObj[key][i]) < 1000:
+                            if len(self.jsonObj[key][i]) < 200:
                                 if continueFlag:
                                     continueFlag = False
                                 self.jsonObj[key][i] = self.jsonObj[key][i] + byte
                         if isinstance(self.jsonObj[key][i],int):
                             if self.jsonObj[key][i] == 0:
                                 self.jsonObj[key][i] = 1
-                            if len(str(self.jsonObj[key][i])) < 50:
+                            if len(str(self.jsonObj[key][i])) < 20:
                                 if continueFlag:
                                     continueFlag = False
-                            self.jsonObj[key][i] = self.jsonObj[key][i]*-2
+                                self.jsonObj[key][i] = self.jsonObj[key][i]*-2
 
                     if len(self.jsonObj[key])<1000:
-                        toAdd = 1000 - len(self.jsonObj[key])
+                        toAdd = 100 - len(self.jsonObj[key])
                         for i in range(0, toAdd//2):
                             self.jsonObj[key].append("A")
                         for i in range(toAdd//2, 1000):
                             self.jsonObj[key].append(random.randint(-10,10))
 
-            if continueFlag:
-                for i in range(0, 500):
+            if continueFlag and not self.bigMutation:
+                self.bigMutation = True
+                for i in range(0, 50):
                     self.jsonObj[f"add{i}"] = "A"
-                for i in range(500, 1000):
+                for i in range(50, 100):
                     self.jsonObj[f"add{i}"] = random.randint(-10,10)
+            elif continueFlag and self.bigMutation:
+                self.infiniteMutation = True
+                self.jsonObj = json.loads(self.inputStr)
             ThreadManager.getInstance().addSem.release()
             return json.dumps(self.jsonObj)
 
@@ -438,8 +490,10 @@ class PlaintextFuzzer(Fuzzer):
         # Number of lines in the sample input
         self.numLines = 0
         # Variants of mutation to execute
-        self.variants = []
-    
+        self.variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
+        # A list of possibly bad bytes
+        self.badBytes = self.getBadBytes()
+
     ########################
     # Variants of mutation #
     ########################
@@ -480,27 +534,68 @@ class PlaintextFuzzer(Fuzzer):
     def mutateZero(self, testStr):
         return "0"
 
-    ###########
-    # Fuzzing #
-    ###########
+    # Mutate a random char in a list of strings
+    def randomCharMutate(self, currLines):
+        pickLine = random.randint(0, len(currLines)-1)
+        pickChar = random.randint(0, len(currLines[pickLine])-1)
+        pickRandomChar = self.badBytes[random.randint(0, len(self.badBytes)-1)]
+        currLines[pickLine] = currLines[pickLine][:pickChar] + pickRandomChar + currLines[pickLine][pickChar+1:]
+        return currLines
 
+    ####################
+    # Helper functions #
+    ####################
+
+    # Produce and return a list containing ascii characters (minus the alphabet)
+    # and some more potentially troublesome bytes
+    def getBadBytes(self):
+        l = []
+        count = 0
+        while count <= 127:
+            if count < 48 or count > 122:
+                l.append(chr(count))
+            count += 1
+        l = l + ["a", "\0", "\n", "%x", "-99999999", "99999999", "0"]
+        return l
+
+    #################
+    # Fuzzing logic #
+    #################
+
+    # Does two rounds of fuzzing
+    # 1. Appending or changing characters exhaustively using a finite list of well-known edge cases
+    # 2. Mutating one random character each time, resetting the string in between
     def fuzz(self, mutated, stop):
+        # ThreadManager.getInstance().addSem.acquire()
+        # ThreadManager.getInstance().addSem.release()
         # Prepare list of input lines
         testStr = self.inputStr
         self.lines = testStr.split("\n")
         currLines = self.lines.copy()
         # Prepare list of variants
-        variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
-        currVariants = variants.copy()
+        currVariants = self.variants.copy()
         # Get total number of lines
         self.numLines = len(self.lines)
         # Begin recursive fuzz
         print("@@@@@ Original testStr: "+testStr+"\n@@@@@ Number of lines: "+str(self.numLines))
-        self.recurseFuzz(mutated, stop, 0, currLines, currVariants)
+        self.basicFuzz(mutated, stop, 0, currLines, currVariants)
+        # Random character mutation
+        print("@@@@@ Starting endless mutation")
+        m = self.inputStr
+        while True:
+            if stop():
+                ThreadManager.getInstance().threadResult((mutated,0))
+                return
+            print("@@@ Testing: "+m)
+            exitCode = runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode))
+            if exitCode == -11:
+                return
+            m = "\n".join(self.randomCharMutate(self.lines.copy()))
 
     # We fuzz via recursion (essentially depth-first logic)
     # For every type of mutation in first input line, do every type of mutation for next line and so on...
-    def recurseFuzz(self, mutated, stop, currLine, currLines, currVariants):
+    def basicFuzz(self, mutated, stop, currLine, currLines, currVariants):
         # Base case: no more input lines
         if currLine == self.numLines:
             return
@@ -535,14 +630,14 @@ class PlaintextFuzzer(Fuzzer):
             else:
                 pass
             # Recurse through the other lines
-            self.recurseFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
+            self.basicFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
             # Join the lines back into a string and fuzz
             testStr = "\n".join(currLines)
             print("@@@ In beginFuzz: testStr = "+testStr)
             exitCode = runProcess(testStr)
             ThreadManager.getInstance().threadResult((testStr,exitCode))
             # If vulnerability found, return
-            if exitCode != 0:
+            if exitCode == -11:
                 return
 
         # No vulnerability found
@@ -560,7 +655,6 @@ def runProcess(testStr):
     p.stderr.close()
     p.stdout.close()
     return ret
-
 
 def runProcessWithLtrace(testStr):
     p = process("./" + sys.argv[1])
@@ -635,6 +729,7 @@ else:
     fuzzer = PlaintextFuzzer(inputStr)
 ThreadManager.getInstance().startThreads(fuzzer)
 
+        
 ### 1. Read input.txt ###
 
 # Use regex to find out what kind of input (easier to mutate)
