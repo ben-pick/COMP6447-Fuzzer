@@ -31,8 +31,30 @@ JSON are
 - large_neg_num (-999999999999999999999999999999999999999999999999999999)
 - format ("%s" *1000)
 
+<<<<<<< HEAD
 We randomly choose a rule for each entry in the JSON object and try to run the mutated input.
 We record the input if it returns a non-zero exit code in bad.txt.
+=======
+For CSV files, the approach was to have a set of cases that we then use to fuzz the program in three phases. The cases are: 
+overflow_lines, overflow_values, minus, plus, zero, larg_minus, large_plus, null_term, format_string, new_line and ascii. overflow_lines 
+seeks to use a valid csv line where each value is a single A. overflow_values uses a line where each value is a set of 100 A's. minus, 
+plus, zero, large_minus and large_plus use -1, 1, 0, -999999999999999999999999999999999999999999999999999999 and 999999999999999999999999999999999999999999999999999999 
+respectively. null_term, format_string and new_line use the null terminator(\0), %x operand and a new line (\n). Ascii then uses each of 
+the ascii values from 0-127. 
+Phase 1 of CSV fuzzing involves appending the above cases to mutate the payload. The cases will append a valid line of the case which should 
+check for any binaries that can potentially cause a seg fault when reading in a new line. 
+Phase 2 of CSV fuzzing involves mutating the input file line by line with the above cases. E.g. in the case of csv1.txt and case "minus", 
+the fuzzer will mutate the initial line of the file so that the first line will be "-1, -1, -1, -1". This should scan for any checks in 
+any binary that checks for line integrity. 
+Phase 3 of CSV fuzzing is the final mutation based fuzzing where it simply replaces the input file with variations of the above cases. 
+When dealing with the csv format, the main factor at play is to make sure each line is a valid csv input, which can be easily done by 
+calculating the number of commas present in each line of the input file and adding one to get the number of values needed per line. As a 
+result, the possible approaches go towards those with a valid csv input line (phase 1 and 2) and those without (phase 3). 
+
+Possible improvements to the csv fuzzer would be to test with more unicode characters and to test with individual value changes rather 
+than the line by line changes. Given that the time limit was 3 minutes to fuzz the program, there were concerns that doing an individual 
+value based input would drastically increase the time. The way this fuzzer is set up allows for expansion of logic in a fairly simple way.  
+>>>>>>> master
 
 ## CSV
 
