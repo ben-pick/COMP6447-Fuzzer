@@ -10,6 +10,8 @@ import re
 import random
 import copy
 import os
+import glob
+
 
 ############################
 ##### HELPER FUNCTIONS #####
@@ -35,6 +37,7 @@ class ThreadManager:
             self.codeFlowCount = 0
             self.stopSem = threading.Semaphore(1)
             self.addSem = threading.Semaphore(1)
+            self.ltrace = False
     # Starts n number of threads (which is specified on instantiation), with the fuzzer you want to fuzz with
     def startThreads(self, fuzzer):
         self.stopFlag = False
@@ -43,9 +46,75 @@ class ThreadManager:
             thread.start()
             print(f"Starting thread {thread.ident}")
 
+    def runProcess(self,testStr):
+        if self.ltrace:
+            (exitCode, ltraceOutput) = self.runProcessWithLtrace(testStr)
+            return (exitCode, ltraceOutput)
+        else:
+            exitCode = self.runProcessWithoutLtrace(testStr)
+            return (exitCode, None)
+
+    # Runs a process, returns exit code
+    def runProcessWithoutLtrace(self,testStr):
+        p = process("./"+sys.argv[1])
+        # print("@@@ Sending: " + testStr)
+        # print(len(testStr))
+        p.sendline(testStr)
+        p.shutdown()
+        ret = p.poll(block = True)
+        p.stderr.close()
+        p.stdout.close()
+        return ret
+
+    def runProcessWithLtrace(self,testStr):
+        p = process("./" + sys.argv[1])
+        ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}", f"-s {99999999}"])
+        sleep(0.001)
+        p.sendline(testStr)
+        p.shutdown()
+        ret = p.poll(block = True)
+        p.stderr.close()
+        p.stdout.close()
+        output = []
+        try:
+            while True:
+                output.append(ltracer.recvline())
+        except:
+            pass
+        ltracer.shutdown()
+        ltracer.stderr.close()
+        ltracer.stdout.close()
+        return (ret,output)
+
+    def ltraceParser(self,ltraceList):
+        codeFlow = []
+        originalList = []
+        # originalLtrace = ""
+        for i in range(0, len(ltraceList)-1):
+            currentCall = ltraceList[i].decode()
+            # originalLtrace += currentCall
+            originalList.append(currentCall)
+            libraryCall = re.search(".*\(",currentCall)
+            resultOfCall = re.search("\=.*",currentCall)
+
+            if libraryCall is not None and resultOfCall is not None:
+                # remove the (
+                libraryCall = libraryCall.group()
+                libraryCall = libraryCall[:len(libraryCall)-1]
+                # remove the  =
+                resultOfCall = resultOfCall.group()
+                resultOfCall = resultOfCall[2:]
+                codeFlow.append((libraryCall, resultOfCall))
+        return (codeFlow,originalList)
     # Whenever a process exits with an exit code, send it to this function. Will stop all threads if we find a vuln.
     # e.g. ThreadManager.getInstance().threadResult(exitCode, inputStr)
-    def threadResult(self,result):
+    def threadResult(self,result,ltraceoutput):
+        if self.ltrace:
+            self.threadResultWithLtrace(result,ltraceoutput)
+        else:
+            self.threadResultWithoutLtrace(result)
+
+    def threadResultWithoutLtrace(self,result):
         (i, e) = result
         self.stopSem.acquire()
         if not self.stopFlag:
@@ -63,10 +132,10 @@ class ThreadManager:
                 self.stopSem.release()
         self.stopSem.release()
 
-    def threadResultWithLtrace(self,result,ltrace):
+    def threadResultWithLtrace(self,result,ltraceOutput):
         (i, e) = result
-        if ltrace is not None:
-            (parsedLtrace,originalLtraceList) = ltraceParser(ltrace)
+        if ltraceOutput is not None:
+            (parsedLtrace,originalLtraceList) = self.ltraceParser(ltraceOutput)
             # calls = tuple(i for i in parsedLtrace)
             # need to convert to a tuple, lists cannot be hashed
             calls = tuple(i[0] for i in parsedLtrace)
@@ -156,7 +225,7 @@ class Fuzzer:
 # Arbitrary enum, you dont have to use in other fuzzer classes
 # All the different permutations for the JSON fuzzer
 class JSONRules(enum.Enum):
-   OVERFLOW = "A" * 100000
+   OVERFLOW = "A" * 10000
    BOUNDARY_MINUS = -1
    BOUNDARY_PLUS = 1
    BOUNDARY_ZERO = 0
@@ -197,10 +266,10 @@ class JSONFuzzer(Fuzzer):
         m = self.inputStr
         while True:
             if stop():
-                ThreadManager.getInstance().threadResultWithLtrace((mutated,0),None)
+                ThreadManager.getInstance().threadResult((mutated,0),None)
                 return
-            (exitCode, ltrace) = runProcessWithLtrace(m)
-            ThreadManager.getInstance().threadResultWithLtrace((m,exitCode),ltrace)
+            (exitCode, ltrace) = ThreadManager.getInstance().runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode),ltrace)
             if exitCode != 0:
                 return
             if self.infiniteMutation:
@@ -584,11 +653,11 @@ class PlaintextFuzzer(Fuzzer):
         m = self.inputStr
         while True:
             if stop():
-                ThreadManager.getInstance().threadResult((mutated,0))
+                ThreadManager.getInstance().threadResult((mutated,0),None)
                 return
             print("@@@ Testing: "+m)
-            exitCode = runProcess(m)
-            ThreadManager.getInstance().threadResult((m,exitCode))
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode), ltraceOutput)
             if exitCode == -11:
                 return
             m = "\n".join(self.randomCharMutate(self.lines.copy()))
@@ -601,7 +670,7 @@ class PlaintextFuzzer(Fuzzer):
             return
         # Stop threads when required
         if stop():
-            ThreadManager.getInstance().threadResult((mutated,0))
+            ThreadManager.getInstance().threadResult((mutated,0),None)
             return
         # If there are more variants of mutation to test, pop and mutate
         while currVariants != []:
@@ -634,75 +703,22 @@ class PlaintextFuzzer(Fuzzer):
             # Join the lines back into a string and fuzz
             testStr = "\n".join(currLines)
             print("@@@ In beginFuzz: testStr = "+testStr)
-            exitCode = runProcess(testStr)
-            ThreadManager.getInstance().threadResult((testStr,exitCode))
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(testStr)
+            ThreadManager.getInstance().threadResult((testStr,exitCode), ltraceOutput)
             # If vulnerability found, return
             if exitCode == -11:
                 return
 
         # No vulnerability found
-        return ThreadManager.getInstance().threadResult(("",0))
+        return ThreadManager.getInstance().threadResult(("",0), None)
 
-
-# Runs a process, returns exit code
-def runProcess(testStr):
-    p = process("./"+sys.argv[1])
-    print("@@@ Sending: " + testStr)
-    # print(len(testStr))
-    p.sendline(testStr)
-    p.shutdown()
-    ret = p.poll(block = True)
-    p.stderr.close()
-    p.stdout.close()
-    return ret
-
-def runProcessWithLtrace(testStr):
-    p = process("./" + sys.argv[1])
-    ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}", f"-s {99999999}"])
-    sleep(0.001)
-    p.sendline(testStr)
-    p.shutdown()
-    ret = p.poll(block = True)
-    p.stderr.close()
-    p.stdout.close()
-    output = []
-    try:
-        while True:
-            output.append(ltracer.recvline())
-    except:
-        pass
-    ltracer.shutdown()
-    ltracer.stderr.close()
-    ltracer.stdout.close()
-    return (ret,output)
-
-def ltraceParser(ltraceList):
-    codeFlow = []
-    originalList = []
-    # originalLtrace = ""
-    for i in range(0, len(ltraceList)-1):
-        currentCall = ltraceList[i].decode()
-        # originalLtrace += currentCall
-        originalList.append(currentCall)
-        libraryCall = re.search(".*\(",currentCall)
-        resultOfCall = re.search("\=.*",currentCall)
-
-        if libraryCall is not None and resultOfCall is not None:
-            # remove the (
-            libraryCall = libraryCall.group()
-            libraryCall = libraryCall[:len(libraryCall)-1]
-            # remove the  =
-            resultOfCall = resultOfCall.group()
-            resultOfCall = resultOfCall[2:]
-            codeFlow.append((libraryCall, resultOfCall))
-    return (codeFlow,originalList)
 
 ######################
 ##### MAIN LOGIC #####
 ######################
 
 # Usage: ./fuzzer program sampleinput.txt
-if len(sys.argv) != 3:
+if len(sys.argv) != 3 and len(sys.argv) !=4:
     print("@@@ Usage: ./fuzzer program sampleinput.txt")
     sys.exit()
 
@@ -710,6 +726,8 @@ if len(sys.argv) != 3:
 try:
     inputFile = open(sys.argv[2], 'r')
     inputStr = inputFile.read().strip()
+    if len(sys.argv) == 4 and sys.argv[3] == "-report":
+        ThreadManager.getInstance().ltrace = True
     #TODO: lines almost always returns an empty list, will be using inputStr as the input for the isJSON, isXML, isCSV funcitons
     lines = inputFile.readlines()
     inputFile.close()
