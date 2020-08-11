@@ -451,13 +451,12 @@ class XMLFuzzer(Fuzzer):
         while(True):
 
             if stop():
-                ThreadManager.getInstance().threadResult((mutated,0))
+                ThreadManager.getInstance().threadResult((mutated,0),None)
                 return
 
             xml_str = ET.tostring(xml, encoding='unicode', method='xml') 
-            exitCode = runProcess(xml_str)
-            print(xml_str)
-            ThreadManager.getInstance().threadResult((xml_str,exitCode))
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(xml_str)
+            ThreadManager.getInstance().threadResult((xml_str,exitCode),ltraceOutput)
             if exitCode != 0:
                 return
 
