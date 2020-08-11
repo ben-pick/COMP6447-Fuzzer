@@ -247,10 +247,48 @@ class JSONFuzzer(Fuzzer):
             ThreadManager.getInstance().addSem.release()
             return json.dumps(self.jsonObj)
 
-        
+
+class XMLTextRules(enum.Enum):
+   BOUNDARY_MINUS = "-1"
+   BOUNDARY_PLUS = "1"
+   BOUNDARY_ZERO = "0"  
+   FORMAT = "%s"
+   LARGE_POS_NUM = "999999999999999999999999999999999999999999999999999999"
+   LARGE_NEG_NUM = "-999999999999999999999999999999999999999999999999999999"
+#   XSS = "<script>txt = 'a';while(1) {txt = txt += 'a';}</script>"
+#   NOTHING = 'nothing'
+
+class XMLAttributeRules(enum.Enum):
+    FORMAT = "%s"
+    BAD_URL = "http://thisisaverybadurlatitwontworkbecauseitisbad.com"
+    BOUNDARY_MINUS = "-1"
+    BOUNDARY_PLUS = "1"
+    BOUNDARY_ZERO = "0"  
+    LARGE_POS_NUM = "999999999999999999999999999999999999999999999999999999"
+    LARGE_NEG_NUM = "-999999999999999999999999999999999999999999999999999999"
+    NOTHING = 'nothing'
+
+#probably wont include these, as they grow the xml too fast or destroy fuzzable inputs
+#    NEW_LINK = 'new_link'
+#    NEW_NAME = 'new_name'
+#    NEW_ID = 'new_id'
+#    NEW_CLASS = 'new_class'
+#    REMOVE = 'remove'
+class XMLDOMElements(enum.Enum):
+    DIV_NO_ADD = '<div class="no_add" id="yes"><a href="http://google.com">Here is some link...</a><link href="http://somewebsite.com" /><span>text</span></div>'
+    DIV = '<div id="yes"><a href="http://google.com">Here is some link...</a><link href="http://somewebsite.com" /><span>text</span></div>'
+#    DIV_BIG = '<div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div>'
+#    SPAN_NO_ADD = ('span', 'no_add', '%s')
+#    DIV_WITH_STUFF_NO_ADD = ('div', 'no_add', '<a href="%s" class="no_add" name="%s"> %s </a><span class="no_add" name="%s">BRUH</span>')
+#    BIG_DIV_NO_ADD = ('div', 'no_add', '<div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span> </div><div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span> </div><div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span></div>')
+#    RECURSIVE_DIV = ('div', '', 'recursion')
+#    BILLION_LAUGHS = ('div', 'no_add', '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ELEMENT lolz (#PCDATA)><!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;"><!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;"><!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;"><!ENTITY lol4 "&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;"><!ENTITY lol5 "&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;"><!ENTITY lol6 "&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;"><!ENTITY lol7 "&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;"><!ENTITY lol8 "&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;"><!ENTITY lol9 "&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;"]><lolz>&lol9;</lolz>')
+
 class XMLFuzzer(Fuzzer):
     def __init__(self, inputStr):
         super().__init__(inputStr)
+        self.original_input = inputStr
+
     def isType(self):
         try:
             ET.fromstring(self.inputStr)
@@ -258,6 +296,79 @@ class XMLFuzzer(Fuzzer):
             return False
 
         return True
+
+    def getParent(self, root, target):
+        parents = {child:parent for parent in root.iter() for child in parent}
+        parent = parents[target]
+        return parent
+
+    def fuzz(self, mutated, stop):
+        xml = ET.fromstring(self.inputStr)
+
+        while(True):
+
+            if stop():
+                ThreadManager.getInstance().threadResult((mutated,0))
+                return
+
+            xml_str = ET.tostring(xml, encoding='unicode', method='xml') 
+            exitCode = runProcess(xml_str)
+            print(xml_str)
+            ThreadManager.getInstance().threadResult((xml_str,exitCode))
+            if exitCode != 0:
+                return
+
+            xml = self.mutate(xml)
+
+
+
+
+    def mutate(self, xml):
+        dom_maniupulated = False;
+
+        #iterate over all items in xml tree
+        for child in xml.iter():
+            dom_chance = random.randint(1,101)
+
+
+            attributes = child.items()
+
+            #fuzz the text of the current element
+            text_rule = random.choice(list(XMLTextRules)).value
+
+            #modifying the text of these tags will produce invalid xml
+            if(child.tag != 'root' and child.tag != 'html' and child.tag != 'body' and child.tag != 'tail' and child.tag != 'head' and child.tag != 'link' and child.tag != 'div'):
+                if text_rule != 'nothing' and child.get('class') != 'no_add':
+                    child.text = text_rule
+                else:
+                    continue
+
+            if(child.get('class') != 'no_add'):
+                #fuzz the attributes of the current element (only if they havent been added by us)
+                attr_rule = random.choice(list(XMLAttributeRules)).value
+                for a in attributes:
+                    bad_text = random.choice(list(XMLTextRules)).value
+
+                    if bad_text == 'nothing:':
+                        break
+
+                    child.set(a[0], attr_rule)
+
+            if not dom_maniupulated:
+                if dom_chance < 20:
+                    if(child.tag != 'root' and child.tag != 'html' and child.tag != 'head' and child.tag != 'tail' and child.tag != 'link' and child.tag != 'a' and child.tag != 'script' and child.tag != 'h1' and child.tag != 'h2' and child.tag != 'h3' and child.tag != 'h4' and child.tag != 'h5' and child.tag != 'h6' and child.tag != 'h7'):
+                        if(child.get('class') != 'no_add'):    
+                            #can manipulate dom
+                            elem_rule = random.choice(list(XMLDOMElements)).value
+                            # element = ET.Element(elem_rule[0])
+                            # element.set('class', elem_rule[1])
+                            # element.text = elem_rule[2]
+                            element = ET.fromstring(elem_rule)
+                            child.append(element)
+                            dom_maniupulated = True
+
+
+        return xml
 
 class CSVFuzzer(Fuzzer):
     def __init__(self, inputStr):
