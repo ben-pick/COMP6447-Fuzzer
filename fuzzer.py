@@ -123,7 +123,7 @@ class ThreadManager:
             elif e == -11:
                 # Save output here
                 print("\n@@@ RESULT")
-                # print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+                print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
                 f = open("bad.txt","w+")
                 f.write(i)
                 f.close()
