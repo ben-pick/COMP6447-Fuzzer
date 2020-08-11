@@ -85,7 +85,7 @@ With several threads running, the hope is that we can mutate the existing XML do
 The fuzzer itself is composed of several python Enum classes, which hold the fuzzing inputs, and a XMLFuzzer class which is responsible for mutating the XML string, and threading results. The class-based implementation is open for extension, and simple to understand.
 
 
-Attributes and text within existing tags are randomly
+Attributes and text within existing tags are randomly chosen.
 
 
 Both of these styles of testing, by choosing rules, attempt to cover the most amount of code by attempting to find scenarios where we can exploit vulnerable code. For example, choosing boundary and large integers to test for integer overflow and unexpected parsing of integers, multiple "%s" format strings, to attempt to deference an invalid pointer where there is a format string vulnerability, and many "A"s to attempt to overwrite an important return address such that the program seg faults.
