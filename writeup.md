@@ -11,30 +11,30 @@ fuzzer.py
 
 ## Description
 
-The fuzzer will receive the runnable binary's name and the name of it's sample input file.
-The sample input file will be in either JSON, CSV, XML or Plaintext format.
+The fuzzer will receive the runnable binary's name and the name of it's sample input file. The sample input file will be in either JSON, CSV, XML or Plaintext format.
 
-It then determines the type of the input file by attempting to parse the file as XML/JSON,
-or counting the commas present within the file and seeing if that correlates to a valid CSV
-file; considering the number of lines in the file. Eventually it defaults to Plaintext if it cannot
-determine any of the above.
+It then determines the type of the input file by attempting to parse the file as XML/JSON, or counting the commas present within the file and seeing if that correlates to a valid CSV file; considering the number of lines in the file. Eventually it defaults to Plaintext if it cannot determine any of the above.
 
-The fuzzer then passes the appropriate fuzzing class (JSON, XML, CSV, Plaintext) to a thread manager.
-The thread manager starts several threads (number may be altered easily as required) of the fuzzing class, each running the fuzz() function.
+The fuzzer then passes the appropriate fuzzing class (JSON, XML, CSV, Plaintext) to a thread manager. The thread manager starts several threads (based on how many logical threads are on the machine) of the fuzzing class, each running the fuzz() function. Each thread returns to the threadResult() function , where the exitcode is monitored for a segmentation fault, and all other threads can be stopped. Here, this design benefits both where state is held through semaphores, creating processes simultaneously, as well as where it isn't (i.e. completely random mutation), generating mutations and processes simultaneously.
 
 ## JSON
 
-For JSON files, we have hardcoded 'rules' that are used at random to mutate the input file. These rules for
-JSON are
+For JSON files, we have hardcoded 'rules' that are used initially to mutate the input string. These rules for JSON are
 
-- overflow("A" * 1000)
+- overflow("A" * 10000)
 - boundary_minus (-1), boundary_plus (1), boundary_zero (0)
 - large_pos_num (999999999999999999999999999999999999999999999999999999)
 - large_neg_num (-999999999999999999999999999999999999999999999999999999)
 - format ("%s" *1000)
+- one_byte, two_byte, four_byte, eight_byte integer overflows
 
-We randomly choose a rule for each entry in the JSON object and try to run the mutated input.
-We record the input if it returns a non-zero exit code in bad.txt.
+Phase 1 of JSON fuzzing involves testing each of these inputs for each JSONObject in the given input. This will cause vulnerabilities that do not depend on code flow (i.e. where one JSONObject has to equal x and the other requires an overflow) to be detected early on. Using these inputs, we could detect buffer overflows, where we assumed that 10000 bytes was large enough to overflow a buffer where each JSONObject was a separate buffer, format string vulnerabilities, where sending many %s would cause the binary to attempt to dereference many arbitrary values on the stack (alot of which would segmentation fault), integer overflows (sending 1 more byte than the size of each of the numerical bytes).
+
+Phase 2 of JSON fuzzing involves creating large JSONObjects both vertically (having many sub objects) and horizontally (where their values are large in length). All strings have "bad bytes" appended to them randomly ("\0", "\n","A", "%s") until their length is of size 50, all ints are multiplied by -2 until their length is of size 20 and lists have 1000 ints and strings appended to them, applying the previous rules to them. Once all elements have reached their determined sizes, 100 more JSONObjects are added to the base objects and mutated the same as previously. These mutations are used to not only catch errors in the JSON parser, where it may not have been thought that extra elements could be added, as well as buffer overflows where the buffer is shared across JSONObjects. This phase will also detect semi-conditional code flow vulnerabilities, where each JSON element requires to be the same type as originally defined, however, is still subject to potential integer/buffer overflows and format string vulnerabilities, aided by the potential corruption of '\n' and '\0' required functions like strcmp and fgets.
+
+Phase 3 of JSON fuzzing runs for the remaining length of the runtime of the fuzzer, where one random element is chosen and manipulated based on the original input string. For ints, a random number is chosen between two bounds. For strings, a random number of characters from the original string and random set of characters (selected from all unicode characters). For lists, a random element in the list is chosen and has these rules applied to them based on their type. This phase will detect fully-conditional code, where some elements need to be the same as the original apart from one which could have any of the previous vulnerabilities stated.
+
+In terms of improvement, phase 3 needs to be more deterministic, where this type of randomness will most likely not find the required vulnerability. One way this could be achieved is by setting a thread to each JSON element, allowing state to be stored for each JSON element rather than the whole object itself. This would allow mutations like incrementing an integer between two ranges, where the increment can be reduced each time, allowing for efficient searching of a vulnerable number, or testing all possible permutations of a given string for a set of unicode characters. 
 
 ## CSV
 
@@ -118,4 +118,28 @@ There were some considerations made when deciding the types of mutations to perf
 In the third segment, mutating without reverting back to the original sample input lines in between was the initial implementation. However it appeared to be less effective than the latter implementation since some binaries require the input to stay somewhat similar to the original sample (in the case of plaintext3). Not reverting back to the original input lines would make it incredibly ineffective when fuzzing such binaries, especially with the random nature of the mutations and a large list of possible characters. It very quickly renders every input "invalid" in a sense, and its nearly impossible to revert back to "valid" input.
 
 Perhaps an improvement to the plaintext fuzzer would be to still include the above earlier implementation as its own test (would be close to a last resort as it basically feeds a bunch of random bytes) - given that the previous methods have not found any bugs. There are also many more ways to mutate that could be included, or perhaps come up with more intelligent mutations based off how the binary reacts.
+
+## Something Awesome
+
+During this assignment, we created a "code flow report" which reports all code flows taken by the fuzzer when it was running, as well as both the input and ltrace output for each code flow. This allows for easier reverse engineering to dynamically understand how the binary might work, and what types of input could cause different paths. The usage is as such:```./fuzzer.py binary binary.txt -report``` , which generates a directory `trace` with a file named `trace.txt`, showing a report of all the code flows and how many times they ran. 
+
+e.g. for json1, `trace.txt` reads:
+
+```
+Total Runs: 12
+
+Code Paths:
+
+1) strlen --> strlen --> strncmp --> strlen --> strlen --> strncmp --> strlen --> strlen --> strlen --> strlen --> strlen --> strlen --> strtol --> strndup --> strncpy --> printf ran 7 times
+                    
+2)  ran 1 times
+                    
+3) strlen --> puts ran 1 times
+                    
+4) strlen --> strlen --> strncmp --> strlen --> strlen --> strncmp --> strlen --> strlen --> strtol --> strndup --> strncpy --> printf ran 2 times
+                    
+5) strlen --> strlen --> strncmp --> strlen --> strlen --> strncmp --> strlen --> strlen --> strtol --> strndup ran 1 times
+```
+
+Similarly, folders for each of the code paths,based on the code path number, will be generated containing `input.txt` (showing an example input for this code path) and `ltraceoutput.txt` (showing the ltrace output for this code path). This currently only works reliably for json and plaintext binaries, where there seems to be an issue with connecting ltrace through pid to some of the other binaries.
 
