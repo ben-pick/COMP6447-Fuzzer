@@ -205,6 +205,7 @@ Folders based on code paths have been generated...
 
 
 threadManager = ThreadManager(len(os.sched_getaffinity(0)))
+
 print(len(os.sched_getaffinity(0)))
 
 # All specific fuzzers inherit from this
@@ -398,8 +399,7 @@ class XMLTextRules(enum.Enum):
    FORMAT = "%s"
    LARGE_POS_NUM = "999999999999999999999999999999999999999999999999999999"
    LARGE_NEG_NUM = "-999999999999999999999999999999999999999999999999999999"
-#   XSS = "<script>txt = 'a';while(1) {txt = txt += 'a';}</script>"
-#   NOTHING = 'nothing'
+   NOTHING = ''
 
 class XMLAttributeRules(enum.Enum):
     FORMAT = "%s"
@@ -409,7 +409,7 @@ class XMLAttributeRules(enum.Enum):
     BOUNDARY_ZERO = "0"  
     LARGE_POS_NUM = "999999999999999999999999999999999999999999999999999999"
     LARGE_NEG_NUM = "-999999999999999999999999999999999999999999999999999999"
-    NOTHING = 'nothing'
+    NOTHING = ''
 
 #probably wont include these, as they grow the xml too fast or destroy fuzzable inputs
 #    NEW_LINK = 'new_link'
@@ -418,14 +418,11 @@ class XMLAttributeRules(enum.Enum):
 #    NEW_CLASS = 'new_class'
 #    REMOVE = 'remove'
 class XMLDOMElements(enum.Enum):
-    DIV_NO_ADD = '<div class="no_add" id="yes"><a href="http://google.com">Here is some link...</a><link href="http://somewebsite.com" /><span>text</span></div>'
-    DIV = '<div id="yes"><a href="http://google.com">Here is some link...</a><link href="http://somewebsite.com" /><span>text</span></div>'
-#    DIV_BIG = '<div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div><div id="no_add"><a href="fuzzne" class="no_add">fuzzme</a></div>'
-#    SPAN_NO_ADD = ('span', 'no_add', '%s')
-#    DIV_WITH_STUFF_NO_ADD = ('div', 'no_add', '<a href="%s" class="no_add" name="%s"> %s </a><span class="no_add" name="%s">BRUH</span>')
-#    BIG_DIV_NO_ADD = ('div', 'no_add', '<div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span> </div><div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span> </div><div class="no_add"><span name ="%s" class="no_add">HELLO HELLO HELLO %s <p class="no_add">help</p></span></div>')
-#    RECURSIVE_DIV = ('div', '', 'recursion')
-#    BILLION_LAUGHS = ('div', 'no_add', '<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ELEMENT lolz (#PCDATA)><!ENTITY lol1 "&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;"><!ENTITY lol2 "&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;&lol1;"><!ENTITY lol3 "&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;"><!ENTITY lol4 "&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;"><!ENTITY lol5 "&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;&lol4;"><!ENTITY lol6 "&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;&lol5;"><!ENTITY lol7 "&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;&lol6;"><!ENTITY lol8 "&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;&lol7;"><!ENTITY lol9 "&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;&lol8;"]><lolz>&lol9;</lolz>')
+    DIV_NO_ADD = '<div class="no_add" id="yes"><a class="no_add" href="http://google.com">Here is some link...</a><link class="no_add" href="http://somewebsite.com" /><span class="no_add">text</span></div>'
+    SPAN_NO_ADD = '<span class="no_add" id="wot">fuzz me</span>'
+    FMT_TAG = '<format_string class="no_add">%s</format_string>'
+    TRIVIAL_TAG = '<trivial class="no_add" id="trivial">trivial</trivial>'
+    LOTS_OF_ATTRIBUTES  = '<div class="no_add" id="fuzz_me" data="fuzz_me" name="fuzz_me"></div>'
 
 class XMLFuzzer(Fuzzer):
     def __init__(self, inputStr):
