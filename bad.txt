@@ -1,0 +1,17 @@
+<html>
+    <head>
+        <link href="-999999999999999999999999999999999999999999999999999999" />
+    </head>
+    <body>
+        <h1>%s</h1>
+    </body>
+
+    <div id="">
+        <a href="1">1</a>
+    </div>
+
+
+    <tail>
+        <a href="%s">-1</a>
+    </tail>
+</html>

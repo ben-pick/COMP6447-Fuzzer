@@ -61,7 +61,7 @@ class ThreadManager:
                 self.stopSem.release()
         self.stopSem.release()
 
-threadManager = ThreadManager(1)
+threadManager = ThreadManager(len(os.sched_getaffinity(0)))
 
 print(len(os.sched_getaffinity(0)))
 
