@@ -69,7 +69,6 @@ class ThreadManager:
     def runProcessWithLtrace(self,testStr):
         p = process("./" + sys.argv[1])
         ltracer = process(["/usr/bin/ltrace",f"-p {p.pid}", f"-s {99999999}"])
-        sleep(0.001)
         p.sendline(testStr)
         p.shutdown()
         ret = p.poll(block = True)
@@ -124,7 +123,7 @@ class ThreadManager:
             elif e == -11:
                 # Save output here
                 print("\n@@@ RESULT")
-                print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
+                # print("@@@ Faulting input: "+i+"\n@@@ Exit code: "+str(e)+"\n@@@ Found a segfault")
                 f = open("bad.txt","w+")
                 f.write(i)
                 f.close()
@@ -409,25 +408,9 @@ class CSVFuzzer(Fuzzer):
         self.lines = self.inputStr.split("\n")
         self.commasPerLine = self.lines[0].count(",")
         self.valuesPerLine = self.commasPerLine + 1
-    # # Checks if input is CSV
-    # # Idea:
-    # # - count the number of commas for each line
-    # # - every line should have the same number of commas
-    # def isCSV(lines):
-    #     # Check that there is more than one line
-    #     # and at least 1 comma
-    #     # I might be wrong on these, for now it passes the binaries given
-    #     if len(lines) > 1 and lines[0].count(",") > 0:
-    #         num_comma = lines[0].count(",")
-    #         for l in lines:
-    #             if l.count(",") != num_comma:
-    #                 return False
-    #         return True
-    #     return False
-
-    #count lines in input string
-    #count commas in first line
-    #if format is CSV, total comma count will be equal to lines * first line comma count
+        self.rules = ["overflow_lines", "overflow_values", "minus", "plus", "zero", 
+                        "large_minus", "large_plus", "null_term", "format_string", "new_line", "ascii"]
+    
     def isType(self):
         line_count = self.inputStr.count('\n')
         lines = self.inputStr.split("\n")
@@ -452,22 +435,47 @@ class CSVFuzzer(Fuzzer):
         return CSVline
 
     def appendOverflow(self, inputStr):
-        for i in range(10):
+        for i in range(1000):
             inputStr = inputStr + self.craftLine()
         return inputStr
 
-    # forms a valid line of 10 A's
+    # forms a valid line of 100 A's in each valu
     def craftLongLine(self):
         CSVline = '\n'
         for i in range(0, self.commasPerLine):
-            CSVline += 'A'*9+','
-        CSVline += 'A'
+            CSVline += 'A'*100 + ','
+        CSVline += 'A'*100
         return CSVline
     
     def appendLongOverflow(self, inputStr):
         inputStr = inputStr + self.craftLongLine()
         return inputStr
-    
+
+    def appendNegative(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '-1' + ','
+        newLine += '-1'
+        inputStr = inputStr + newLine
+        return inputStr
+        
+    def appendPositive(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '1' + ','
+        newLine += '1'
+        inputStr = inputStr + newLine
+        return inputStr
+
+    # append a line of 0's
+    def appendZero(self, inputStr):
+        newLine = '\n'
+        for i in range(0, self.commasPerLine):
+            newLine += '0,'
+        newLine += '0'
+        inputStr = inputStr + newLine
+        return inputStr   
+
     # Append a line with large positive values
     def largePositive(self, inputStr):
         newLine = '\n'
@@ -486,70 +494,187 @@ class CSVFuzzer(Fuzzer):
         inputStr = inputStr + newLine
         return inputStr
     
-    # append a line of 0's
-    def appendZero(self, inputStr):
+    def nullTerminator(self, inputStr):
+        return inputStr+'\0'
+
+    def appendFormatString(self, inputStr):
+        return inputStr+'%s'
+
+    def appendNewLine(self, inputStr):
+        return inputStr+'\n'
+
+    # Returns a line of ch
+    def mutateLine(self, inputStr, ch):
+        changedLine = ''
+        for i in range(0, self.commasPerLine):
+            changedLine += str(ch) + ','
+        changedLine += str(ch)
+        return changedLine
+    
+    # will append a valid csv line of ascii val e.g. if val=50 -> line = 2,2,2
+    def appendAsciiLine(self, inputStr, val):
         newLine = '\n'
         for i in range(0, self.commasPerLine):
-            newLine += '0,'
-        newLine += '0'
+            newLine += chr(val) + ','
+        newLine += chr(val)
         inputStr = inputStr + newLine
         return inputStr
 
+    def appendAscii(self, inputStr, val):
+        return inputStr + "\n" + chr(val)
+        #return chr(val)
+    
     def fuzz(self, mutated, stop):
         # Fuzz a program with csv file format
         if stop():
-            ThreadManager.getInstance().threadResult((mutated,0))
+            ThreadManager.getInstance().threadResult((mutated,0),None)
             return
-        exitCode = runProcess("")
-        ThreadManager.getInstance().threadResult(("",exitCode))
-        if exitCode != 0:
-            return
-
-        # Fuzz - Overflow via appending single character csv line - e.g. A,A,A,A,A
-        overflow = self.inputStr
-        while (True):
-            overflow = self.appendOverflow(overflow)
-            exitCode = runProcess(overflow)
-            ThreadManager.getInstance().threadResult((overflow,exitCode))
-            if exitCode != 0:
-                return
-            if len(overflow) > 10000: 
-                break
-
-        # Fuzz - Overflow by appending 10 character values csv line - AAAAAAAAAA,AAAA... etc.
-        overflow2 = self.inputStr
-        while (True):
-            overflow2 = self.appendLongOverflow(overflow2)
-            exitCode = runProcess(overflow2)
-            ThreadManager.getInstance().threadResult((overflow2,exitCode))
-            if exitCode != 0:
-                return
-            if len(overflow2) > 10000:
-                break
-
-        # Fuzz - Payload with large Positive number
-        payload = self.largePositive(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
-        if exitCode != 0:
-            return
-
-        # Fuzz - Payload with large negative number
-        payload = self.largeNegative(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
+        (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess("")
+        ThreadManager.getInstance().threadResult(("",exitCode),ltraceOutput)
         if exitCode != 0:
             return
         
-        # Fuzz - Payload with 0's
-        payload = self.appendZero(self.inputStr)
-        exitCode = runProcess(payload)
-        ThreadManager.getInstance().threadResult((payload,exitCode))
-        if exitCode != 0:
+        # Fuzzing for initial appending cases first
+        payload = self.inputStr
+        cases = copy.deepcopy(self.rules)
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                payload = self.appendOverflow(payload)
+            elif(case == "overflow_values"):
+                payload = self.appendLongOverflow(payload)
+            elif(case == "minus"):
+                payload = self.appendNegative(payload)
+            elif(case == "plus"):
+                payload = self.appendPositive(payload)
+            elif(case == "zero"):
+                payload = self.appendZero(payload)
+            elif(case == "large_minus"):
+                payload = self.largeNegative(payload)
+            elif(case == "large_plus"):
+                payload = self.largePositive(payload)
+            elif(case == "null_term"):
+                payload = self.nullTerminator(payload)
+            elif(case == "format_string"):
+                payload = self.appendFormatString(payload)
+            elif(case == "new_line"):
+                payload = self.appendNewLine(payload)
+            elif(case == "ascii"):
+                for i in range(0, 127):
+                    payload = self.inputStr
+                    payload = self.appendAsciiLine(payload, i)
+                    (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+                    if exitCode != 0:
+                        return
+                    payload = self.inputStr
+                    payload = self.appendAscii(payload, i)
+                    (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+                    if exitCode != 0:
+                        return
+                pass
+            else:
+                pass
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(payload)
+            ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+            if exitCode != 0:
+                return
+
+        
+        linesCopy = self.lines
+        cases2 = copy.deepcopy(self.rules)
+        self.lineByLineFuzz(mutated, stop, 0, linesCopy, cases2)
+        self.replacementFuzz(mutated, stop)  
+
+        return ThreadManager.getInstance().threadResult(("",0), None)
+
+    def lineByLineFuzz(self, mutated, stop, currLine, payload, cases):
+        if(currLine == len(self.lines)):
+            return
+        
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0),None)
             return
 
-        # No vulnerability found
-        return ThreadManager.getInstance().threadResult(("",0))
+        payload[currLine] = self.lines[currLine]
+        cases = copy.deepcopy(self.rules)
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                continue
+            elif(case == "overflow_values"):
+                payload[currLine] = self.mutateLine(payload[currLine], "A"*100)
+            elif(case == "minus"):
+                payload[currLine] = self.mutateLine(payload[currLine], -1)
+            elif(case == "plus"):
+                payload[currLine] = self.mutateLine(payload[currLine], 1)
+            elif(case == "zero"):
+                payload[currLine] = self.mutateLine(payload[currLine], 0)
+            elif(case == "large_minus"):
+                payload[currLine] = self.mutateLine(payload[currLine], -999999999999999999999999999999999999999999999999999999)
+            elif(case == "large_plus"):
+                payload[currLine] = self.mutateLine(payload[currLine], 999999999999999999999999999999999999999999999999999999)
+            elif(case == "null_term"):
+                payload[currLine] = self.mutateLine(payload[currLine], "\0")
+            elif(case == "format_string"):
+                payload[currLine] = self.mutateLine(payload[currLine], "%x")
+            elif(case == "new_line"):
+                payload[currLine] = self.mutateLine(payload[currLine], "\n")
+            else:
+                pass
+            final = "\n".join(payload)
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(final)
+            ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+            if exitCode != 0:
+                return
+        self.lineByLineFuzz(mutated, stop, currLine+1, payload, cases)
+
+        return ThreadManager.getInstance().threadResult(("",0),None)
+
+    def replacementFuzz(self, mutated, stop):
+        if stop():
+            ThreadManager.getInstance().threadResult((mutated,0),None)
+            return
+
+        payload = self.inputStr
+        cases = copy.deepcopy(self.rules)
+        while(cases != []):
+            case = cases.pop(0)
+            if(case == "overflow_lines"):
+                payload = "A"*10000
+            elif(case == "overflow_values"):
+                pass
+            elif(case == "minus"):
+                payload = "-1"
+            elif(case == "plus"):
+                payload = "1"
+            elif(case == "zero"):
+                payload = "0"
+            elif(case == "large_minus"):
+                payload = "-999999999999999999999999999999999999999999999999999999"
+            elif(case == "large_plus"):
+                payload = "999999999999999999999999999999999999999999999999999999"
+            elif(case == "null_term"):
+                payload = "\0"
+            elif(case == "format_string"):
+                payload = "%x"
+            elif(case == "new_line"):
+                payload = "\n"
+            elif(case == "ascii"):
+                for i in range(0, 127):
+                    payload = chr(i)
+                    (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(payload)
+                    ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+                    if exitCode != 0:
+                        return
+                pass
+            else:
+                pass
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(payload)
+            ThreadManager.getInstance().threadResult((payload,exitCode),ltraceOutput)
+            if exitCode != 0:
+                return
 
 class PlaintextFuzzer(Fuzzer):
     def __init__(self, inputStr):
@@ -559,7 +684,7 @@ class PlaintextFuzzer(Fuzzer):
         # Number of lines in the sample input
         self.numLines = 0
         # Variants of mutation to execute
-        self.variants = ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
+        self.variants = ["nothing", "addChar", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"]
         # A list of possibly bad bytes
         self.badBytes = self.getBadBytes()
 
@@ -567,8 +692,8 @@ class PlaintextFuzzer(Fuzzer):
     # Variants of mutation #
     ########################
 
-    # Append character padding to overflow
-    def mutateOverflow(self, testStr, count):
+    # Append character padding
+    def mutateAddChar(self, testStr, count):
         return testStr + "a"*count
 
     # Append null character
@@ -581,7 +706,7 @@ class PlaintextFuzzer(Fuzzer):
 
     # Append format string
     def mutateFormat(self, testStr, count):
-        return testStr + "%x"*count
+        return testStr + "%s"*count
 
     # Append all ascii characters
     def mutateAscii(self, testStr):
@@ -624,45 +749,62 @@ class PlaintextFuzzer(Fuzzer):
             if count < 48 or count > 122:
                 l.append(chr(count))
             count += 1
-        l = l + ["a", "\0", "\n", "%x", "-99999999", "99999999", "0"]
+        l = l + ["a", "%s", "-99999999", "99999999"]
         return l
 
     #################
     # Fuzzing logic #
     #################
 
-    # Does two rounds of fuzzing
-    # 1. Appending or changing characters exhaustively using a finite list of well-known edge cases
-    # 2. Mutating one random character each time, resetting the string in between
+    # Does three methods of fuzzing
+    # 1. Incrementally add bytes to the input lines until a limit to test for an overflow vuln
+    # 2. Appending or changing characters exhaustively using a finite list of well-known edge cases
+    # 3. Mutating one random character indefinitely, resetting the input string in between
     def fuzz(self, mutated, stop):
-        # ThreadManager.getInstance().addSem.acquire()
-        # ThreadManager.getInstance().addSem.release()
         # Prepare list of input lines
         testStr = self.inputStr
         self.lines = testStr.split("\n")
+        overflowLines = self.lines.copy()
         currLines = self.lines.copy()
         # Prepare list of variants
         currVariants = self.variants.copy()
         # Get total number of lines
         self.numLines = len(self.lines)
-        # Begin recursive fuzz
-        print("@@@@@ Original testStr: "+testStr+"\n@@@@@ Number of lines: "+str(self.numLines))
+
+        # Add bytes and overflow (method 1)
+        print("@@@@@ Testing for overflow @@@@@")
+        self.overflowFuzz(overflowLines)
+        # Begin recursive fuzz (method 2)
+        print("@@@@@ Testing for well-known vulns @@@@@")
         self.basicFuzz(mutated, stop, 0, currLines, currVariants)
-        # Random character mutation
-        print("@@@@@ Starting endless mutation")
-        m = self.inputStr
-        while True:
-            if stop():
-                ThreadManager.getInstance().threadResult((mutated,0),None)
-                return
-            print("@@@ Testing: "+m)
+        # Random character mutation (method 3)
+        print("@@@@@ Testing with mutation @@@@@")
+        self.mutationFuzz(stop, mutated)
+
+    #####################
+    # Fuzzing functions #
+    #####################
+
+    # Incrementally add characters to the lines of input and test
+    def overflowFuzz(self, overflowLines):
+        continueFlag = True
+        while continueFlag == True:
+            continueFlag = False
+            i = 0
+            while i < self.numLines:
+                newLen = len(overflowLines[i])
+                if newLen < 10000:
+                    continueFlag = True
+                    overflowLines[i] = self.mutateAddChar(overflowLines[i], newLen)
+                i += 1
+            m = "\n".join(overflowLines)
+            # print("@@@ overflow test string: "+m)
             (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(m)
-            ThreadManager.getInstance().threadResult((m,exitCode), ltraceOutput)
+            ThreadManager.getInstance().threadResult((m,exitCode),ltraceOutput)
             if exitCode == -11:
                 return
-            m = "\n".join(self.randomCharMutate(self.lines.copy()))
 
-    # We fuzz via recursion (essentially depth-first logic)
+    # Fuzz via recursion (essentially depth-first logic)
     # For every type of mutation in first input line, do every type of mutation for next line and so on...
     def basicFuzz(self, mutated, stop, currLine, currLines, currVariants):
         # Base case: no more input lines
@@ -679,9 +821,8 @@ class PlaintextFuzzer(Fuzzer):
             variant = currVariants.pop(0)
             if variant == "nothing":
                 pass
-            elif variant == "overflow":
-                currLines[currLine] = self.mutateOverflow(currLines[currLine], 10)
-                # print("@@@ Overflow mutating for index "+str(currLine)+"\n")
+            elif variant == "addChar":
+                currLines[currLine] = self.mutateAddChar(currLines[currLine], 1)
             elif variant == "null":
                 currLines[currLine] = self.mutateNull(currLines[currLine], 1)
             elif variant == "newline":
@@ -699,10 +840,10 @@ class PlaintextFuzzer(Fuzzer):
             else:
                 pass
             # Recurse through the other lines
-            self.basicFuzz(mutated, stop, currLine+1, currLines, ["nothing", "overflow", "null", "newline", "format", "ascii", "largeNeg", "largePos", "zero"])
+            self.basicFuzz(mutated, stop, currLine+1, currLines, self.variants.copy())
             # Join the lines back into a string and fuzz
             testStr = "\n".join(currLines)
-            print("@@@ In beginFuzz: testStr = "+testStr)
+            # print("@@@ In beginFuzz: testStr = "+testStr)
             (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(testStr)
             ThreadManager.getInstance().threadResult((testStr,exitCode), ltraceOutput)
             # If vulnerability found, return
@@ -711,6 +852,20 @@ class PlaintextFuzzer(Fuzzer):
 
         # No vulnerability found
         return ThreadManager.getInstance().threadResult(("",0), None)
+
+    # Endlessly fuzz with one mutated character in sample input each time
+    def mutationFuzz(self, stop, mutated):
+        m = self.inputStr
+        while True:
+            if stop():
+                ThreadManager.getInstance().threadResult((mutated,0), None)
+                return
+            # print("@@@ Testing: "+m)
+            (exitCode,ltraceOutput) = ThreadManager.getInstance().runProcess(m)
+            ThreadManager.getInstance().threadResult((m,exitCode),ltraceOutput)
+            if exitCode == -11:
+                return
+            m = "\n".join(self.randomCharMutate(self.lines.copy()))
 
 
 ######################
@@ -746,34 +901,3 @@ elif CSVFuzzer(inputStr).isType() :
 else:
     fuzzer = PlaintextFuzzer(inputStr)
 ThreadManager.getInstance().startThreads(fuzzer)
-
-        
-### 1. Read input.txt ###
-
-# Use regex to find out what kind of input (easier to mutate)
-# Might run the program a few times to confirm format
-
-# - json
-#   - curly braces at start and end, add more to refine regex if more complicated
-
-# - xml
-#   - xml prologue <?xml version="1.0" encoding="UTF-8"?>) is optional,
-#   - if not there, might have to search for tags, might have code out there for that
-
-# - csv
-#   - basically commas everywhere, might be confused with text
-#   - so we can try giving invalid csv input and see how it reacts
-
-# - Plaintext (multiline)
-#   - this is the "else", if the input doesn't fit the rest
-
-### 2. Do a bunch of basic mutation ###
-
-# - bit flips
-# - empty input
-# - overflow
-# - a mixture of the above
-
-### 3. Do format-specific manipulation/generation of input ###
-
-# - change fields of input, possibly aided
