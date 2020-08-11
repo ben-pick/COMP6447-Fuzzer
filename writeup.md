@@ -90,6 +90,10 @@ Attributes and text within existing tags are randomly
 
 Both of these styles of testing, by choosing rules, attempt to cover the most amount of code by attempting to find scenarios where we can exploit vulnerable code. For example, choosing boundary and large integers to test for integer overflow and unexpected parsing of integers, multiple "%s" format strings, to attempt to deference an invalid pointer where there is a format string vulnerability, and many "A"s to attempt to overwrite an important return address such that the program seg faults.
 
+In terms of improvement, the XML fuzzer would benefit from the ability to write very specific test cases (an example of this would be to write a test case that only changes the text attributes to large "A" strings, or inserting a div with a large depth). As we have taken the multithreading approach,
+it was very difficult to implement specific test cases, as we run into several concurrency and resource management issues. The current XML fuzzer is only able to randomly mutate attributes, the DOM and text as a 'dumb' fuzzer, and has no logic to infer the best next mutation, given the current state of our
+mutated input, or the program's output. We would implement this improvement by first solving the concurrency and resource management issues that come from the fuzzer's multithreaded nature. After this we would be able to write specific test cases and other test cases that select their mutations much more intelligently then our current random method.
+
 ## Plaintext
 
 Fuzzing for plaintext consists of three parts.
